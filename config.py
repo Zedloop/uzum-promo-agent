@@ -1,8 +1,14 @@
 import os
+from pathlib import Path
 
 from dotenv import load_dotenv
 
-load_dotenv()
+# Aniq shu loyihaning o'z .env fayli, override=True bilan - aks holda bir
+# nechta loyiha bitta jarayonda birlashtirilganda (masalan PythonAnywhere'da),
+# avval yuklangan boshqa loyihaning o'zgaruvchilari ustidan yozilmay qolib,
+# noto'g'ri qiymatlar (masalan boshqa loyihaning Telegram tokeni) ishlatilib
+# ketishi mumkin edi.
+load_dotenv(dotenv_path=Path(__file__).parent / ".env", override=True)
 
 
 class Config:
