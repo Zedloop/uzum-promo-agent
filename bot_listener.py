@@ -26,22 +26,30 @@ def _handle_callback(callback):
         _answer_callback(callback["id"], "Bu qaror allaqachon ko'rib chiqilgan.")
         return
 
+    skus = decision["skus"]
+
     if action == "add":
         try:
             client = PromoClient(decision["shop_id"])
+            # Uzum bitta mahsulotning BARCHA SKU'larini birga talab qiladi -
+            # shuning uchun joriy to'liq SKU ro'yxatini qayta olib, mos
+            # kelganlarini tavsiya narxida, qolganlarini o'zgarishsiz qo'shamiz.
+            all_skus = client.get_product_skus(decision["sale_id"], decision["product_id"])
+            sku_list_payload = []
+            for sku in all_skus:
+                sku_id = sku.get("skuId")
+                match = next((s for s in skus if s["sku_id"] == sku_id), None)
+                if match:
+                    sku_list_payload.append({"skuId": sku_id, "newSalePrice": match["recommended_price"]})
+                else:
+                    sku_list_payload.append({"skuId": sku_id, "newSalePrice": int(sku.get("currentSellPrice") or 0)})
+
             client.add_products(
                 decision["sale_id"],
-                [
-                    {
-                        "productId": decision["product_id"],
-                        "skuList": [
-                            {"skuId": decision["sku_id"], "newSalePrice": decision["recommended_price"]}
-                        ],
-                    }
-                ],
+                [{"productId": decision["product_id"], "skuList": sku_list_payload}],
             )
             _answer_callback(callback["id"], "Qo'shildi ✅")
-            _edit_message(chat_id, message_id, f"{original_text}\n\n✅ Uzum tavsiya narxida qo'shildi.")
+            _edit_message(chat_id, message_id, f"{original_text}\n\n✅ Uzum tavsiya narxlarida qo'shildi.")
         except Exception as e:
             _answer_callback(callback["id"], "Xato yuz berdi")
             _edit_message(chat_id, message_id, f"{original_text}\n\n❌ Qo'shishda xato: {e}")
@@ -49,14 +57,10 @@ def _handle_callback(callback):
         try:
             client = PromoClient(decision["shop_id"])
             # Narx = ERP narxi + 49990, Chegirma = 49990 - shunda Sotish narxi
-            # o'z-o'zidan ERP narxiga teng bo'ladi.
-            client.update_sku_price(
-                decision["product_id"],
-                decision["sku_id"],
-                decision["your_price"],
-                ikpu=decision.get("ikpu"),
-                markup=SKIP_MARKUP,
-            )
+            # o'z-o'zidan ERP narxiga teng bo'ladi. Mahsulotning qolgan
+            # (ERP'da bog'lanmagan) SKU'lari o'zgarishsiz qoldiriladi.
+            sku_updates = {s["sku_id"]: {"new_sell_price": s["your_price"], "ikpu": s.get("ikpu")} for s in skus}
+            client.update_product_skus(decision["product_id"], sku_updates, markup=SKIP_MARKUP)
             # Aksiyaga qo'shishga darhol urinmaymiz - narx shunday sozlangan
             # holida qoladi, aksiyaga qo'shish keyingi davriy tekshiruvda
             # (yoki foydalanuvchi o'zi) amalga oshiriladi.
@@ -64,8 +68,7 @@ def _handle_callback(callback):
             _edit_message(
                 chat_id,
                 message_id,
-                f"{original_text}\n\n⚙️ Uzum'dagi mahsulot narxi {decision['your_price']:,} so'mga "
-                f"moslashtirildi.".replace(",", " "),
+                f"{original_text}\n\n⚙️ Uzum'dagi mahsulot narxlari moslashtirildi.",
             )
         except Exception as e:
             _answer_callback(callback["id"], "Xato yuz berdi")

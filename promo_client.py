@@ -79,47 +79,55 @@ class PromoClient:
         response = self._request("GET", url, params={"productId": product_id})
         return response.json()
 
-    def update_sku_price(self, product_id, sku_id, new_sell_price, ikpu=None, markup=PRICE_MARKUP):
-        """Mahsulotning asosiy 'Narx/Chegirma' sozlamalarini yangilaydi, shunda
-        'Sotish narxi' = new_sell_price bo'ladi (Narx = new_sell_price + markup,
-        Chegirma = markup). Boshqa barcha maydonlar (barcode, dimensions,
-        characteristics) Uzum'dan olingan joriy holatidan O'ZGARTIRILMASDAN
-        qaytarib yuboriladi - shunday qilib mahsulot ma'lumotlari buzilmaydi.
+    def update_product_skus(self, product_id, sku_updates, markup=PRICE_MARKUP):
+        """Mahsulotning asosiy 'Narx/Chegirma' sozlamalarini yangilaydi.
 
-        'ikpu' (soliq kodi) alohida beriladi, chunki Uzum'ning GET /product
-        so'rovi bu maydonni hech qachon to'g'ri ko'rsatmaydi (hatto
-        muvaffaqiyatli saqlangandan keyin ham doim null qaytaradi - bu
-        Uzum tomonidagi alohida xususiyat/xato). Shuning uchun ikpu qiymati
-        mahalliy ERP bazasidan (foydalanuvchi bir marta qo'lda kiritgan)
-        olinishi kerak."""
+        Uzum bitta mahsulotning BARCHA SKU variantlarini (masalan fleshkaning
+        16/32/64/128 GB o'lchamlari) bitta so'rovda birga talab qiladi - faqat
+        bittasini yuborsak "Not valid Sku Titles from SkuDto!" deb rad etadi.
+        Shuning uchun bu metod mahsulotning barcha SKU'larini oladi:
+        - 'sku_updates' ichida ko'rsatilgan SKU'lar uchun: Sotish narxi =
+          yangi narx, Narx = yangi narx + markup (tarix yaratish).
+        - Qolgan (o'zgartirilmaydigan) SKU'lar uchun: joriy narxi
+          o'zgarishsiz qaytarib yuboriladi - ularga tegilmaydi.
+
+        'sku_updates': {sku_id: {"new_sell_price": ..., "ikpu": ...}}
+        """
         product = self.get_product(product_id)
-
         sku_list = product.get("skuList", [])
-        target = next((s for s in sku_list if s.get("skuId") == sku_id), None)
-        if target is None:
-            raise ValueError(f"productId={product_id} ichida skuId={sku_id} topilmadi")
+        if not sku_list:
+            raise ValueError(f"productId={product_id} uchun SKU topilmadi")
 
-        if not ikpu:
-            raise ValueError(
-                "IKPU (soliq kodi) ERP'da to'ldirilmagan - bu mahsulotda narxni "
-                "avtomatik sozlab bo'lmaydi."
-            )
+        sku_entries = []
+        for target in sku_list:
+            sku_id = target.get("skuId")
+            update = sku_updates.get(sku_id)
 
-        # "skuForProduct" - mahsulot nomi uchun SKU qisqa qismi (masalan
-        # "BYKSHOP-VIZITKA" to'liq nomidan faqat "VIZITKA" qismi kerak -
-        # do'kon prefiksidan keyingi, birinchi "-" belgisidan keyingi qism).
-        full_title = target.get("skuFullTitle") or product.get("skuTitle", "")
-        sku_for_product = full_title.split("-", 1)[1] if "-" in full_title else full_title
+            if update is not None:
+                if not update.get("ikpu"):
+                    raise ValueError(
+                        f"IKPU (soliq kodi) ERP'da to'ldirilmagan (skuId={sku_id}) - "
+                        "bu mahsulotda narxni avtomatik sozlab bo'lmaydi."
+                    )
+                new_sell_price = int(update["new_sell_price"])
+                full_price = new_sell_price + markup
+                ikpu = update["ikpu"]
+            else:
+                # O'zgartirilmaydi - joriy narxi saqlanadi
+                current_price = int(target.get("price") or 0)
+                new_sell_price = current_price
+                full_price = current_price
+                ikpu = None
 
-        new_full_price = int(new_sell_price) + markup
-        payload = {
-            "productId": product_id,
-            "skuForProduct": sku_for_product,
-            "skuList": [
+            # "skuForProduct" - Uzum'ning o'zi shu SKU uchun ishlatadigan qisqa
+            # nom (masalan "DMSH-SNDKMIC-16" to'liq nomidan "16"). Bu
+            # get_product javobida "skuTitle" sifatida to'g'ridan-to'g'ri
+            # beriladi.
+            sku_entries.append(
                 {
-                    "id": target.get("skuId"),
-                    "fullPrice": new_full_price,
-                    "sellPrice": int(new_sell_price),
+                    "id": sku_id,
+                    "fullPrice": full_price,
+                    "sellPrice": new_sell_price,
                     "ikpu": ikpu,
                     "skuTitle": target.get("skuFullTitle") or target.get("skuTitle"),
                     "barcode": target.get("barcode"),
@@ -127,7 +135,20 @@ class PromoClient:
                     "skuCharacteristicList": target.get("characteristicsList", []),
                     "status": None,
                 }
-            ],
+            )
+
+        # Barcha SKU'lar bitta mahsulotga tegishli bo'lgani uchun
+        # "skuForProduct" ham bittagina - birinchi (yoki o'zgartirilayotgan)
+        # SKU'ning qisqa nomidan olamiz.
+        changed_target = next(
+            (s for s in sku_list if s.get("skuId") in sku_updates), sku_list[0]
+        )
+        sku_for_product = changed_target.get("skuTitle") or ""
+
+        payload = {
+            "productId": product_id,
+            "skuForProduct": sku_for_product,
+            "skuList": sku_entries,
             "skuTitlesForCustomCharacteristics": [],
         }
 

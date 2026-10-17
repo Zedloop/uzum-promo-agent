@@ -22,10 +22,13 @@ def send_text(text):
         pass
 
 
-def notify_price_rejected(shop_id, sale_id, sale_title, product_id, sku_id, sku_code, nomi, your_price, recommended_price, marja_foiz, ikpu=None):
-    """Narx rad etilganda, Uzum tavsiya qilgan narx va shu narxdagi marjani
-    ko'rsatib, 'shu narxda qo'shish' / 'nastroykadan sozlash kerak' tugmalari
-    bilan xabar yuboradi."""
+def notify_product_rejected(shop_id, sale_id, sale_title, product_id, skus):
+    """Mahsulot (uning barcha mos SKU'lari bilan birga) aksiyadan rad
+    etilganda, har bir SKU uchun Uzum tavsiya qilgan narx va marjani
+    ko'rsatib, BITTA xabar bilan 'shu narxda qo'shish' / 'nastroykadan
+    sozlash kerak' tugmalarini yuboradi - SKU-SKU alohida emas, chunki Uzum
+    bitta mahsulotning barcha SKU'larini birgalikda qaror qilishni talab
+    qiladi."""
     if not Config.TELEGRAM_BOT_TOKEN or not Config.TELEGRAM_CHAT_ID:
         return
 
@@ -34,21 +37,18 @@ def notify_price_rejected(shop_id, sale_id, sale_title, product_id, sku_id, sku_
             "shop_id": shop_id,
             "sale_id": sale_id,
             "product_id": product_id,
-            "sku_id": sku_id,
-            "sku_code": sku_code,
-            "nomi": nomi,
-            "your_price": your_price,
-            "recommended_price": recommended_price,
-            "ikpu": ikpu,
+            "skus": skus,
         }
     )
 
-    text = (
-        f"⚠️ Narx mos kelmadi: {sku_code} ({nomi})\n"
-        f"Aksiya: '{sale_title}'\n"
-        f"Sizning narxingiz: {your_price:,} so'm - rad etildi\n"
-        f"Uzum tavsiyasi: {recommended_price:,} so'm (marja: {marja_foiz:.1f}%)"
-    ).replace(",", " ")
+    nomi = skus[0]["nomi"]
+    lines = [f"⚠️ Narx mos kelmadi: {nomi}", f"Aksiya: '{sale_title}'"]
+    for s in skus:
+        lines.append(
+            f"- {s['sku_code']}: sizning narxingiz {s['your_price']:,} so'm - rad etildi, "
+            f"Uzum tavsiyasi {s['recommended_price']:,} so'm (marja: {s['marja_foiz']:.1f}%)".replace(",", " ")
+        )
+    text = "\n".join(lines)
 
     payload = {
         "chat_id": Config.TELEGRAM_CHAT_ID,
@@ -88,13 +88,14 @@ def _edit_message(chat_id, message_id, text):
         pass
 
 
-def send_summary(added, nastroyka_only):
-    """Bir sikl tugagach, qaysi SKU'lar aksiyaga qo'shilgani va qaysilari
-    faqat nastroykadan narxi sozlanib, aksiyadan rad etilgani haqida bitta
-    umumiy xabar yuboradi."""
+def send_summary(added, nastroyka_only, bogsiz_unlinked=None):
+    """Bir sikl tugagach, qaysi SKU'lar aksiyaga qo'shilgani, qaysilari
+    faqat nastroykadan narxi sozlanib aksiyadan rad etilgani, va qaysi
+    SKU'lar ERP'da umuman bog'lanmagani haqida bitta umumiy xabar yuboradi."""
+    bogsiz_unlinked = bogsiz_unlinked or []
     if not Config.TELEGRAM_BOT_TOKEN or not Config.TELEGRAM_CHAT_ID:
         return
-    if not added and not nastroyka_only:
+    if not added and not nastroyka_only and not bogsiz_unlinked:
         return
 
     lines = ["📋 Aksiya tekshiruvi yakunlandi"]
@@ -118,6 +119,11 @@ def send_summary(added, nastroyka_only):
             )
     else:
         lines.append("- yo'q")
+
+    if bogsiz_unlinked:
+        lines.append(f"\n🔗 ERP'da bog'lanmagan SKU'lar ({len(bogsiz_unlinked)}) - Uzum sozlamalaridan bog'lang:")
+        for shop_id, sku_code in bogsiz_unlinked:
+            lines.append(f"- {sku_code} (do'kon {shop_id})")
 
     send_text("\n".join(lines))
 
