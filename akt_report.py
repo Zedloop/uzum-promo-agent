@@ -25,10 +25,7 @@ def _caption(shop_id, invoice):
     lines = [f"🏪 Do'kon {shop_id} · Akt {_display_number(invoice)}"]
     slot = invoice.get("timeSlotReservation") or {}
     if slot.get("timeFrom") and slot.get("timeTo"):
-        vaqt = f"{_dt(slot['timeFrom']):%d.%m.%Y %H:%M}–{_dt(slot['timeTo']):%H:%M}"
-        if slot["timeTo"] < time.time() * 1000:
-            vaqt += " ⚠️ vaqti o'tib ketgan"
-        lines.append(f"🕒 Ta'minlash vaqti: {vaqt}")
+        lines.append(f"🕒 Ta'minlash vaqti: {_dt(slot['timeFrom']):%d.%m.%Y %H:%M}–{_dt(slot['timeTo']):%H:%M}")
     else:
         lines.append("🕒 Ta'minlash vaqti tanlanmagan")
     lines.append(f"📦 {invoice.get('totalToStock') or 0} dona · {int(invoice.get('fullPrice') or 0):,} so'm".replace(",", " "))
@@ -49,6 +46,10 @@ def send_created_acts():
             continue
         for invoice in invoices:
             if (invoice.get("invoiceStatus") or {}).get("value") != CREATED_STATUS:
+                continue
+            # Ta'minlash vaqti o'tib ketgan aktlar endi kerak emas
+            slot_end = (invoice.get("timeSlotReservation") or {}).get("timeTo")
+            if slot_end and slot_end < time.time() * 1000:
                 continue
             number = _display_number(invoice)
             try:
