@@ -75,6 +75,20 @@ class PromoClient:
         response = self._request("POST", url, json={"products": products})
         return response.json()
 
+    def list_returns(self, size=100):
+        """'Ta'minot -> Qaytarishlar' (Yaroqsiz / Qaytarilgan) ro'yxati -
+        barcha sahifalarni yig'ib qaytaradi."""
+        url = f"{self.product_base_url}/shop/{self.shop_id}/return"
+        result = []
+        page = 0
+        while True:
+            response = self._request("GET", url, params={"page": page, "size": size})
+            items = response.json().get("payload") or []
+            result.extend(items)
+            if len(items) < size:
+                return result
+            page += 1
+
     def get_product(self, product_id):
         url = f"{self.product_base_url}/shop/{self.shop_id}/product"
         response = self._request("GET", url, params={"productId": product_id})

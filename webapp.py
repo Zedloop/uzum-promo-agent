@@ -7,6 +7,8 @@ from config import Config
 from heartbeat import record_run
 from lock_store import acquire_lock, release_lock
 from main import run
+from returns_report import build_returns_report
+from telegram_notify import send_text
 
 app = Flask(__name__)
 
@@ -23,6 +25,13 @@ def _run_cycle():
         record_run(error=e)
     finally:
         release_lock()
+
+
+def _send_returns():
+    try:
+        send_text(build_returns_report())
+    except Exception as e:
+        send_text(f"❌ Vozvratlarni olishda xato: {e}")
 
 
 @app.route("/run-check")
@@ -46,6 +55,14 @@ def telegram_webhook():
         abort(403)
 
     update = request.get_json(silent=True) or {}
+
+    msg = update.get("message")
+    if msg and str(msg["chat"]["id"]) == str(Config.TELEGRAM_CHAT_ID):
+        # Guruhda "/vozvrat" yoki "/vozvrat@bot_nomi" ko'rinishida keladi
+        command = (msg.get("text") or "").strip().split()[:1]
+        if command and command[0].split("@")[0] == "/vozvrat":
+            threading.Thread(target=_send_returns, daemon=True).start()
+
     callback = update.get("callback_query")
     if callback:
         # Telegram'ga darhol javob qaytaramiz - aks holda Uzum so'rovlari
