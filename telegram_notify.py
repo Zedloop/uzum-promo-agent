@@ -1,4 +1,4 @@
-﻿import requests
+import requests
 
 from config import Config
 from decision_store import create_decision
