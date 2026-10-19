@@ -20,6 +20,14 @@ def _handle_callback(callback):
 
     if ":" not in data:
         return
+
+    # Qarorni pop qilishdan oldin tekshiramiz - begona odam bossa qaror
+    # o'chib ketmasligi va egasi keyin baribir bosa olishi uchun.
+    user_id = str(callback.get("from", {}).get("id", ""))
+    if Config.ALLOWED_USER_IDS and user_id not in Config.ALLOWED_USER_IDS:
+        _answer_callback(callback["id"], "Sizda bu amal uchun ruxsat yo'q.")
+        return
+
     action, decision_id = data.split(":", 1)
     decision = pop_decision(decision_id)
     if not decision:

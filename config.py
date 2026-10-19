@@ -47,6 +47,12 @@ class Config:
     # maxfiy qiymat (setWebhook'da secret_token sifatida ro'yxatdan o'tkaziladi)
     TELEGRAM_WEBHOOK_SECRET = os.getenv("TELEGRAM_WEBHOOK_SECRET")
 
+    # Telegram tugmalarini bosishga ruxsat berilgan foydalanuvchi ID'lari
+    # (vergul bilan). Bo'sh bo'lsa - cheklov yo'q.
+    ALLOWED_USER_IDS = {
+        uid.strip() for uid in os.getenv("ALLOWED_USER_IDS", "").split(",") if uid.strip()
+    }
+
 
 def validate():
     missing = []
