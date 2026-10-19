@@ -8,6 +8,7 @@ from config import Config
 from heartbeat import record_run
 from lock_store import acquire_lock, release_lock
 from main import run
+from promocode_create import DEFAULT_SHOP_ID, create_promocode
 from returns_report import build_returns_reports
 from telegram_notify import send_text
 from timeslot_report import build_timeslot_report
@@ -53,6 +54,14 @@ def _send_acts():
         send_text(f"❌ Aktlarni yuborishda xato: {e}")
 
 
+def _send_promocode(shop_id=None):
+    try:
+        text, _ = create_promocode(shop_id or DEFAULT_SHOP_ID)
+        send_text(text)
+    except Exception as e:
+        send_text(f"❌ Promokod yaratishda xato: {e}")
+
+
 @app.route("/run-check")
 def run_check_endpoint():
     token = request.args.get("token", "")
@@ -86,6 +95,15 @@ def telegram_webhook():
             threading.Thread(target=_send_timeslot, daemon=True).start()
         elif name == "/akt":
             threading.Thread(target=_send_acts, daemon=True).start()
+        elif name == "/promocode":
+            # Haqiqiy chegirma yaratadi - shuning uchun faqat ruxsat
+            # berilgan foydalanuvchi(lar), tugmalar kabi
+            user_id = str((msg.get("from") or {}).get("id", ""))
+            if Config.ALLOWED_USER_IDS and user_id not in Config.ALLOWED_USER_IDS:
+                send_text("⛔ Promokod yaratishga ruxsatingiz yo'q.")
+            else:
+                args = (msg.get("text") or "").split()[1:]
+                threading.Thread(target=_send_promocode, args=(args[0] if args else None,), daemon=True).start()
 
     callback = update.get("callback_query")
     if callback:

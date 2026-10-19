@@ -91,6 +91,30 @@ class PromoClient:
                 return result
             page += 1
 
+    def get_promocode_prefix(self):
+        url = f"{self.base_url}/{self.shop_id}/promocode/prefix"
+        return self._request("GET", url).json()["prefix"]
+
+    def promocode_exists(self, full_code):
+        url = f"{self.base_url}/{self.shop_id}/promocode/exists"
+        return bool(self._request("POST", url, json={"code": full_code}).json().get("exists"))
+
+    def create_promocode(self, code, start_ms, end_ms, discount_percent, quantity_use=1):
+        """Butun do'konga amal qiladigan foizli promokod. 'code' - prefikssiz
+        qismi (Uzum oldiga do'kon prefiksini o'zi qo'shadi)."""
+        url = f"{self.base_url}/{self.shop_id}/promocode"
+        payload = {
+            "shopId": int(self.shop_id),
+            "code": code,
+            "expiredAt": end_ms,
+            "startActiveAt": start_ms,
+            "discountScope": "SHOP",
+            "discountPercent": discount_percent,
+            "promoActivationSum": 0,
+            "quantityUse": quantity_use,
+        }
+        return self._request("POST", url, json=payload).json()
+
     def list_invoices(self, size=100):
         """'Ta'minlashlar -> FBO' ro'yxati (barcha sahifalar)."""
         url = f"{self.product_base_url}/shop/{self.shop_id}/invoice"
