@@ -9,7 +9,7 @@ from heartbeat import record_run
 from lock_store import acquire_lock, release_lock
 from main import run
 from promo_client import PromoClient
-from promocode_create import DISCOUNT_PERCENT
+from promocode_create import parse_percent
 from returns_report import build_returns_reports
 from telegram_notify import send_text, send_with_buttons
 from timeslot_report import build_timeslot_report
@@ -55,15 +55,15 @@ def _send_acts():
         send_text(f"❌ Aktlarni yuborishda xato: {e}")
 
 
-def _send_promocode_picker():
+def _send_promocode_picker(percent):
     # Do'kon tugmasi bosilgach promokod bot_listener._handle_callback'da
-    # ("promo:<shop_id>") yaratiladi
+    # ("promo:<shop_id>:<foiz>") yaratiladi
     try:
         titles = PromoClient(Config.UZUM_SHOP_IDS[0]).list_shops()
     except Exception:
         titles = {}
-    buttons = [(f"🏪 {titles.get(s, s)}", f"promo:{s}") for s in Config.UZUM_SHOP_IDS]
-    send_with_buttons(f"🎟 Qaysi do'kon uchun promokod yaratilsin? ({DISCOUNT_PERCENT}%, bugun, 1 marta)", buttons)
+    buttons = [(f"🏪 {titles.get(s, s)}", f"promo:{s}:{percent}") for s in Config.UZUM_SHOP_IDS]
+    send_with_buttons(f"🎟 Qaysi do'kon uchun promokod yaratilsin? ({percent}%, bugun, 1 marta)", buttons)
 
 
 @app.route("/run-check")
@@ -106,7 +106,13 @@ def telegram_webhook():
             if Config.ALLOWED_USER_IDS and user_id not in Config.ALLOWED_USER_IDS:
                 send_text("⛔ Promokod yaratishga ruxsatingiz yo'q.")
             else:
-                threading.Thread(target=_send_promocode_picker, daemon=True).start()
+                args = (msg.get("text") or "").split()[1:]
+                try:
+                    percent = parse_percent(args[0] if args else None)
+                except ValueError as e:
+                    send_text(f"❌ {e}")
+                else:
+                    threading.Thread(target=_send_promocode_picker, args=(percent,), daemon=True).start()
 
     callback = update.get("callback_query")
     if callback:

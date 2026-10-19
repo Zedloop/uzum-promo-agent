@@ -9,7 +9,7 @@ from decision_store import get_offset, set_offset
 from telegram_notify import _answer_callback, _edit_message, _api_base
 from decision_store import pop_decision
 from promo_client import PromoClient
-from promocode_create import create_promocode
+from promocode_create import create_promocode, parse_percent
 
 SKIP_MARKUP = 49990  # "Nastroykadan sozlash kerak" tugmasi: Narx = ERP narxi + shuncha, Chegirma = shuncha
 
@@ -49,10 +49,10 @@ def _handle_callback(callback):
             _answer_callback(callback["id"], "Bu xabar bo'yicha promokod allaqachon yaratilgan.")
             return
         _answer_callback(callback["id"], "⏳ Yaratilmoqda...")
-        shop_id = decision_id
+        shop_id, _, percent = decision_id.partition(":")
         try:
             titles = PromoClient(shop_id).list_shops()
-            text, _ = create_promocode(shop_id, titles.get(shop_id))
+            text, _ = create_promocode(shop_id, titles.get(shop_id), parse_percent(percent or None))
             _edit_message(chat_id, message_id, f"{text}\n\n({who})")
         except Exception as e:
             traceback.print_exc()
