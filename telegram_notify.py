@@ -1,4 +1,4 @@
-import requests
+﻿import requests
 
 from config import Config
 from decision_store import create_decision
@@ -16,7 +16,7 @@ def send_text(text):
     try:
         requests.post(
             f"{_api_base()}/sendMessage",
-            json={"chat_id": Config.TELEGRAM_CHAT_ID, "text": text},
+            json={"chat_id": Config.TELEGRAM_CHAT_ID, "text": text}, timeout=30,
         )
     except Exception:
         pass
@@ -42,7 +42,7 @@ def notify_product_rejected(shop_id, sale_id, sale_title, product_id, skus):
     )
 
     nomi = skus[0]["nomi"]
-    lines = [f"⚠️ Narx mos kelmadi: {nomi}", f"Aksiya: '{sale_title}'"]
+    lines = [f"вљ пёЏ Narx mos kelmadi: {nomi}", f"Aksiya: '{sale_title}'"]
     for s in skus:
         lines.append(
             f"- {s['sku_code']}: sizning narxingiz {s['your_price']:,} so'm - rad etildi, "
@@ -56,14 +56,14 @@ def notify_product_rejected(shop_id, sale_id, sale_title, product_id, skus):
         "reply_markup": {
             "inline_keyboard": [
                 [
-                    {"text": "✅ Shu narxda qo'shish", "callback_data": f"add:{decision_id}"},
-                    {"text": "⚙️ Nastroykadan sozlash kerak", "callback_data": f"skip:{decision_id}"},
+                    {"text": "вњ… Shu narxda qo'shish", "callback_data": f"add:{decision_id}"},
+                    {"text": "вљ™пёЏ Nastroykadan sozlash kerak", "callback_data": f"skip:{decision_id}"},
                 ]
             ]
         },
     }
     try:
-        requests.post(f"{_api_base()}/sendMessage", json=payload)
+        requests.post(f"{_api_base()}/sendMessage", json=payload, timeout=30)
     except Exception:
         pass
 
@@ -72,7 +72,7 @@ def _answer_callback(callback_query_id, text):
     try:
         requests.post(
             f"{_api_base()}/answerCallbackQuery",
-            json={"callback_query_id": callback_query_id, "text": text},
+            json={"callback_query_id": callback_query_id, "text": text}, timeout=30,
         )
     except Exception:
         pass
@@ -82,7 +82,7 @@ def _edit_message(chat_id, message_id, text):
     try:
         requests.post(
             f"{_api_base()}/editMessageText",
-            json={"chat_id": chat_id, "message_id": message_id, "text": text},
+            json={"chat_id": chat_id, "message_id": message_id, "text": text}, timeout=30,
         )
     except Exception:
         pass
@@ -98,9 +98,9 @@ def send_summary(added, nastroyka_only, bogsiz_unlinked=None):
     if not added and not nastroyka_only and not bogsiz_unlinked:
         return
 
-    lines = ["📋 Aksiya tekshiruvi yakunlandi"]
+    lines = ["рџ“‹ Aksiya tekshiruvi yakunlandi"]
 
-    lines.append(f"\n✅ Aksiyaga qo'shildi ({len(added)}):")
+    lines.append(f"\nвњ… Aksiyaga qo'shildi ({len(added)}):")
     if added:
         for item in added:
             lines.append(
@@ -110,7 +110,7 @@ def send_summary(added, nastroyka_only, bogsiz_unlinked=None):
     else:
         lines.append("- yo'q")
 
-    lines.append(f"\n⚙️ Faqat nastroykadan narx sozlandi, aksiyadan rad etildi ({len(nastroyka_only)}):")
+    lines.append(f"\nвљ™пёЏ Faqat nastroykadan narx sozlandi, aksiyadan rad etildi ({len(nastroyka_only)}):")
     if nastroyka_only:
         for item in nastroyka_only:
             lines.append(
@@ -121,7 +121,7 @@ def send_summary(added, nastroyka_only, bogsiz_unlinked=None):
         lines.append("- yo'q")
 
     if bogsiz_unlinked:
-        lines.append(f"\n🔗 ERP'da bog'lanmagan SKU'lar ({len(bogsiz_unlinked)}) - Uzum sozlamalaridan bog'lang:")
+        lines.append(f"\nрџ”— ERP'da bog'lanmagan SKU'lar ({len(bogsiz_unlinked)}) - Uzum sozlamalaridan bog'lang:")
         for shop_id, sku_code in bogsiz_unlinked:
             lines.append(f"- {sku_code} (do'kon {shop_id})")
 

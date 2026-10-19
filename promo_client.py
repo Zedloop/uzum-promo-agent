@@ -32,6 +32,7 @@ class PromoClient:
         )
 
     def _request(self, method, url, **kwargs):
+        kwargs.setdefault("timeout", 60)
         response = self.session.request(method, url, **kwargs)
         if response.status_code == 401 and Config.UZUM_USERNAME and Config.UZUM_PASSWORD:
             self._set_auth_header(fetch_new_token())

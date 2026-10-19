@@ -38,6 +38,9 @@ def _handle_callback(callback):
         _answer_callback(callback["id"], "Bu qaror allaqachon ko'rib chiqilgan.")
         return
 
+    # Telegram faqat birinchi javobni ko'rsatadi - shuning uchun darhol
+    # javob beramiz, natijani esa xabarni tahrirlab ko'rsatamiz.
+    _answer_callback(callback["id"], "⏳ Bajarilmoqda...")
     skus = decision["skus"]
 
     if action == "add":
@@ -60,11 +63,10 @@ def _handle_callback(callback):
                 decision["sale_id"],
                 [{"productId": decision["product_id"], "skuList": sku_list_payload}],
             )
-            _answer_callback(callback["id"], "Qo'shildi ✅")
             _edit_message(chat_id, message_id, f"{original_text}\n\n✅ Uzum tavsiya narxlarida qo'shildi ({who}).")
         except Exception as e:
-            _answer_callback(callback["id"], "Xato yuz berdi")
-            _edit_message(chat_id, message_id, f"{original_text}\n\n❌ Qo'shishda xato: {e}")
+            traceback.print_exc()
+            _edit_message(chat_id, message_id, f"{original_text}\n\n❌ Qo'shishda xato ({who}): {e}")
     elif action == "skip":
         try:
             client = PromoClient(decision["shop_id"])
@@ -76,15 +78,14 @@ def _handle_callback(callback):
             # Aksiyaga qo'shishga darhol urinmaymiz - narx shunday sozlangan
             # holida qoladi, aksiyaga qo'shish keyingi davriy tekshiruvda
             # (yoki foydalanuvchi o'zi) amalga oshiriladi.
-            _answer_callback(callback["id"], "Narx sozlandi ✅")
             _edit_message(
                 chat_id,
                 message_id,
                 f"{original_text}\n\n⚙️ Uzum'dagi mahsulot narxlari moslashtirildi ({who}).",
             )
         except Exception as e:
-            _answer_callback(callback["id"], "Xato yuz berdi")
-            _edit_message(chat_id, message_id, f"{original_text}\n\n❌ Narxni sozlashda xato: {e}")
+            traceback.print_exc()
+            _edit_message(chat_id, message_id, f"{original_text}\n\n❌ Narxni sozlashda xato ({who}): {e}")
 
 
 def listen():

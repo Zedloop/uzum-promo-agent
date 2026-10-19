@@ -39,6 +39,7 @@ def fetch_new_token():
     response = requests.post(
         Config.UZUM_OAUTH_URL,
         params={"referer": "https://seller.uzum.uz/"},
+        timeout=30,
         headers={"Authorization": CLIENT_AUTH_HEADER},
         data={
             "grant_type": "password",

@@ -1,3 +1,5 @@
+import threading
+
 from flask import Flask, abort, request
 
 from bot_listener import _handle_callback
@@ -43,7 +45,11 @@ def telegram_webhook():
     update = request.get_json(silent=True) or {}
     callback = update.get("callback_query")
     if callback:
-        _handle_callback(callback)
+        # Telegram'ga darhol javob qaytaramiz - aks holda Uzum so'rovlari
+        # sekinlashsa Telegram javob kutmay, tugma bosilishini qayta-qayta
+        # yuboradi. Ish o'zi orqa fonda bajariladi (oddiy VPS'da gunicorn
+        # worker'i so'rov tugagach ham thread'ni o'ldirmaydi).
+        threading.Thread(target=_handle_callback, args=(callback,), daemon=True).start()
     return "OK", 200
 
 
