@@ -91,6 +91,11 @@ class PromoClient:
                 return result
             page += 1
 
+    def list_shops(self):
+        """Akkauntdagi barcha do'konlar: {shop_id: nomi}."""
+        shops = self._request("GET", f"{self.product_base_url}/shop/").json() or []
+        return {str(s["id"]): s.get("shopTitle") or str(s["id"]) for s in shops}
+
     def get_promocode_prefix(self):
         url = f"{self.base_url}/{self.shop_id}/promocode/prefix"
         return self._request("GET", url).json()["prefix"]

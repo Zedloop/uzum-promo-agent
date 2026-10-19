@@ -1,3 +1,4 @@
+import os
 import time
 import traceback
 
@@ -8,6 +9,7 @@ from decision_store import get_offset, set_offset
 from telegram_notify import _answer_callback, _edit_message, _api_base
 from decision_store import pop_decision
 from promo_client import PromoClient
+from promocode_create import create_promocode
 
 SKIP_MARKUP = 49990  # "Nastroykadan sozlash kerak" tugmasi: Narx = ERP narxi + shuncha, Chegirma = shuncha
 
@@ -33,6 +35,30 @@ def _handle_callback(callback):
         return
 
     action, decision_id = data.split(":", 1)
+
+    if action == "promo":
+        # /promocode -> do'kon tugmasi: decision_id o'rnida shop_id keladi.
+        # Tugmalar olib tashlanadi - qayta bosib ikkinchi kod yaratilmasligi uchun.
+        # Bir xabardagi tugma faqat bir marta ishlaydi (tez ikki bosilsa ham) -
+        # gunicorn worker'lari alohida jarayon, shuning uchun fayl orqali.
+        marker = os.path.join(os.path.dirname(__file__), "data", f"promo_{chat_id}_{message_id}.done")
+        os.makedirs(os.path.dirname(marker), exist_ok=True)
+        try:
+            os.close(os.open(marker, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+        except FileExistsError:
+            _answer_callback(callback["id"], "Bu xabar bo'yicha promokod allaqachon yaratilgan.")
+            return
+        _answer_callback(callback["id"], "⏳ Yaratilmoqda...")
+        shop_id = decision_id
+        try:
+            titles = PromoClient(shop_id).list_shops()
+            text, _ = create_promocode(shop_id, titles.get(shop_id))
+            _edit_message(chat_id, message_id, f"{text}\n\n({who})")
+        except Exception as e:
+            traceback.print_exc()
+            _edit_message(chat_id, message_id, f"{original_text}\n\n❌ Promokod yaratishda xato ({who}): {e}")
+        return
+
     decision = pop_decision(decision_id)
     if not decision:
         _answer_callback(callback["id"], "Bu qaror allaqachon ko'rib chiqilgan.")

@@ -22,7 +22,7 @@ def _end_of_today_ms():
     return int(end.timestamp() * 1000)
 
 
-def create_promocode(shop_id=DEFAULT_SHOP_ID):
+def create_promocode(shop_id=DEFAULT_SHOP_ID, shop_title=None):
     if str(shop_id) not in Config.UZUM_SHOP_IDS:
         raise ValueError(f"Do'kon {shop_id} ro'yxatda yo'q ({', '.join(Config.UZUM_SHOP_IDS)})")
 
@@ -44,7 +44,7 @@ def create_promocode(shop_id=DEFAULT_SHOP_ID):
     full_code = f"{prefix}-{code}"
     return (
         f"🎟 Yangi promokod: {full_code}\n"
-        f"🏪 Do'kon {shop_id} · butun do'kon uchun\n"
+        f"🏪 {shop_title or shop_id} ({shop_id}) · butun do'kon uchun\n"
         f"💸 Chegirma: {DISCOUNT_PERCENT}%\n"
         f"📅 Amal qiladi: {datetime.fromtimestamp(end_ms / 1000, TASHKENT):%d.%m.%Y} 23:59 gacha\n"
         f"🔢 {QUANTITY_USE} marta ishlatiladi"

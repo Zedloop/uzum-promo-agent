@@ -33,6 +33,21 @@ def send_text(text):
             pass
 
 
+def send_with_buttons(text, buttons):
+    """buttons: [(matn, callback_data), ...] - har biri alohida qatorda."""
+    if not Config.TELEGRAM_BOT_TOKEN or not Config.TELEGRAM_CHAT_ID:
+        return
+    keyboard = [[{"text": label, "callback_data": data}] for label, data in buttons]
+    try:
+        requests.post(
+            f"{_api_base()}/sendMessage",
+            json={"chat_id": Config.TELEGRAM_CHAT_ID, "text": text, "reply_markup": {"inline_keyboard": keyboard}},
+            timeout=30,
+        )
+    except Exception:
+        pass
+
+
 def send_document(filename, content, caption=""):
     if not Config.TELEGRAM_BOT_TOKEN or not Config.TELEGRAM_CHAT_ID:
         return
