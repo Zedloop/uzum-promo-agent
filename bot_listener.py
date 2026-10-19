@@ -23,7 +23,11 @@ def _handle_callback(callback):
 
     # Qarorni pop qilishdan oldin tekshiramiz - begona odam bossa qaror
     # o'chib ketmasligi va egasi keyin baribir bosa olishi uchun.
-    user_id = str(callback.get("from", {}).get("id", ""))
+    sender = callback.get("from", {})
+    user_id = str(sender.get("id", ""))
+    who = f"@{sender['username']}" if sender.get("username") else (sender.get("first_name") or user_id)
+    print(f"Tugma bosildi: data={data} user_id={user_id} who={who}", flush=True)
+
     if Config.ALLOWED_USER_IDS and user_id not in Config.ALLOWED_USER_IDS:
         _answer_callback(callback["id"], "Sizda bu amal uchun ruxsat yo'q.")
         return
@@ -57,7 +61,7 @@ def _handle_callback(callback):
                 [{"productId": decision["product_id"], "skuList": sku_list_payload}],
             )
             _answer_callback(callback["id"], "Qo'shildi ✅")
-            _edit_message(chat_id, message_id, f"{original_text}\n\n✅ Uzum tavsiya narxlarida qo'shildi.")
+            _edit_message(chat_id, message_id, f"{original_text}\n\n✅ Uzum tavsiya narxlarida qo'shildi ({who}).")
         except Exception as e:
             _answer_callback(callback["id"], "Xato yuz berdi")
             _edit_message(chat_id, message_id, f"{original_text}\n\n❌ Qo'shishda xato: {e}")
@@ -76,7 +80,7 @@ def _handle_callback(callback):
             _edit_message(
                 chat_id,
                 message_id,
-                f"{original_text}\n\n⚙️ Uzum'dagi mahsulot narxlari moslashtirildi.",
+                f"{original_text}\n\n⚙️ Uzum'dagi mahsulot narxlari moslashtirildi ({who}).",
             )
         except Exception as e:
             _answer_callback(callback["id"], "Xato yuz berdi")
