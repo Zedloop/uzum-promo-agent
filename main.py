@@ -1,3 +1,5 @@
+import json
+import os
 import time
 from datetime import datetime
 
@@ -132,6 +134,35 @@ def process_shop(shop_id, prices_by_sku, added, nastroyka_only, bogsiz_unlinked)
             print(f"[{shop_id}] '{title}' (id={sale_id}): mos keluvchi ERP mahsuloti topilmadi.")
 
 
+SUMMARY_STATE_FILE = os.path.join(os.path.dirname(__file__), "data", "summary_state.json")
+UNLINKED_REMIND_SECONDS = 24 * 3600
+
+
+def _summary_needed(added, nastroyka_only, unlinked):
+    """Yakuniy hisobot har 15 daqiqada bir xil "yo'q" bilan kelmasligi uchun:
+    faqat aksiyaga qo'shilgan/sozlangan narsa bo'lsa, bog'lanmagan SKU'lar
+    ro'yxati o'zgarsa yoki ular haqida oxirgi eslatmaga 24 soat o'tsa."""
+    try:
+        with open(SUMMARY_STATE_FILE, "r", encoding="utf-8") as f:
+            state = json.load(f)
+    except Exception:
+        state = {}
+
+    current = [list(x) for x in unlinked]
+    now = time.time()
+    needed = bool(added or nastroyka_only)
+    if current != state.get("unlinked"):
+        needed = True
+    elif current and now - state.get("sent_at", 0) >= UNLINKED_REMIND_SECONDS:
+        needed = True
+
+    if needed:
+        os.makedirs(os.path.dirname(SUMMARY_STATE_FILE), exist_ok=True)
+        with open(SUMMARY_STATE_FILE, "w", encoding="utf-8") as f:
+            json.dump({"unlinked": current, "sent_at": now}, f, ensure_ascii=False)
+    return needed
+
+
 def run():
     validate()
 
@@ -150,7 +181,9 @@ def run():
             print(f"[{shop_id}] Do'konni tekshirishda XATO - {e}")
             shop_errors.append(f"do'kon {shop_id}: {e}")
 
-    send_summary(added, nastroyka_only, sorted(bogsiz_unlinked))
+    unlinked = sorted(bogsiz_unlinked)
+    if _summary_needed(added, nastroyka_only, unlinked):
+        send_summary(added, nastroyka_only, unlinked)
 
     # Do'kon xatolari jim yutilib ketmasligi uchun - sikl "xato bilan tugadi"
     # deb belgilanadi va kuzatuvchi (watchdog) bu haqda Telegram'ga yozadi.
