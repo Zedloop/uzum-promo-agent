@@ -13,13 +13,24 @@ def _api_base():
 def send_text(text):
     if not Config.TELEGRAM_BOT_TOKEN or not Config.TELEGRAM_CHAT_ID:
         return
-    try:
-        requests.post(
-            f"{_api_base()}/sendMessage",
-            json={"chat_id": Config.TELEGRAM_CHAT_ID, "text": text}, timeout=30,
-        )
-    except Exception:
-        pass
+    # Telegram bitta xabarda 4096 belgidan ko'pini qabul qilmaydi - uzun
+    # matnni qatorlar bo'yicha bo'laklarga ajratib yuboramiz.
+    chunks, current = [], ""
+    for line in text.split("\n"):
+        if current and len(current) + len(line) + 1 > 4000:
+            chunks.append(current)
+            current = line
+        else:
+            current = f"{current}\n{line}" if current else line
+    chunks.append(current)
+    for chunk in chunks:
+        try:
+            requests.post(
+                f"{_api_base()}/sendMessage",
+                json={"chat_id": Config.TELEGRAM_CHAT_ID, "text": chunk[:4096]}, timeout=30,
+            )
+        except Exception:
+            pass
 
 
 def notify_product_rejected(shop_id, sale_id, sale_title, product_id, skus):

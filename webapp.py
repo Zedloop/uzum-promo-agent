@@ -9,6 +9,7 @@ from lock_store import acquire_lock, release_lock
 from main import run
 from returns_report import build_returns_reports
 from telegram_notify import send_text
+from timeslot_report import build_timeslot_report
 
 app = Flask(__name__)
 
@@ -37,6 +38,13 @@ def _send_returns():
         send_text(f"❌ Vozvratlarni olishda xato: {e}")
 
 
+def _send_timeslot():
+    try:
+        send_text(build_timeslot_report())
+    except Exception as e:
+        send_text(f"❌ Time slot tahlilida xato: {e}")
+
+
 @app.route("/run-check")
 def run_check_endpoint():
     token = request.args.get("token", "")
@@ -63,8 +71,11 @@ def telegram_webhook():
     if msg and str(msg["chat"]["id"]) == str(Config.TELEGRAM_CHAT_ID):
         # Guruhda "/vozvrat" yoki "/vozvrat@bot_nomi" ko'rinishida keladi
         command = (msg.get("text") or "").strip().split()[:1]
-        if command and command[0].split("@")[0] == "/vozvrat":
+        name = command[0].split("@")[0] if command else ""
+        if name == "/vozvrat":
             threading.Thread(target=_send_returns, daemon=True).start()
+        elif name == "/timeslot":
+            threading.Thread(target=_send_timeslot, daemon=True).start()
 
     callback = update.get("callback_query")
     if callback:

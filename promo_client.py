@@ -89,6 +89,39 @@ class PromoClient:
                 return result
             page += 1
 
+    def list_products(self, size=100):
+        """Do'kondagi barcha mahsulotlar (SKU qoldiqlari bilan). Filtrsiz -
+        aks holda qoldig'i tugagan mahsulotlar ro'yxatga tushmay qoladi."""
+        url = f"{self.product_base_url}/shop/{self.shop_id}/product/getProducts"
+        result = []
+        page = 0
+        while True:
+            response = self._request(
+                "GET",
+                url,
+                params={"searchQuery": "", "sortBy": "id", "order": "descending", "size": size, "page": page},
+            )
+            items = response.json().get("productList") or []
+            result.extend(items)
+            if len(items) < size:
+                return result
+            page += 1
+
+    def list_finance_orders(self, shop_ids, date_from, date_to, size=100):
+        """'Moliya -> Sotuvlar' ro'yxati. date_from/date_to - unix soniyalarda."""
+        url = Config.UZUM_API_BASE_URL.split("/api/")[0] + "/api/v1/seller/finance/orders"
+        params = {"shopIds": ",".join(map(str, shop_ids)), "dateFrom": date_from, "dateTo": date_to, "size": size}
+        result = []
+        page = 0
+        while True:
+            response = self._request("GET", url, params={**params, "page": page})
+            data = response.json()
+            items = data.get("items") or []
+            result.extend(items)
+            if len(items) < size or len(result) >= (data.get("total") or 0):
+                return result
+            page += 1
+
     def get_product(self, product_id):
         url = f"{self.product_base_url}/shop/{self.shop_id}/product"
         response = self._request("GET", url, params={"productId": product_id})
