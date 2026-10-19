@@ -115,12 +115,12 @@ def _answer_callback(callback_query_id, text):
         pass
 
 
-def _edit_message(chat_id, message_id, text):
+def _edit_message(chat_id, message_id, text, parse_mode=None):
+    payload = {"chat_id": chat_id, "message_id": message_id, "text": text}
+    if parse_mode:
+        payload["parse_mode"] = parse_mode
     try:
-        requests.post(
-            f"{_api_base()}/editMessageText",
-            json={"chat_id": chat_id, "message_id": message_id, "text": text}, timeout=30,
-        )
+        requests.post(f"{_api_base()}/editMessageText", json=payload, timeout=30)
     except Exception:
         pass
 

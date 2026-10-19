@@ -1,3 +1,4 @@
+import html
 import os
 import time
 import traceback
@@ -53,7 +54,7 @@ def _handle_callback(callback):
         try:
             titles = PromoClient(shop_id).list_shops()
             text, _ = create_promocode(shop_id, titles.get(shop_id), parse_percent(percent or None))
-            _edit_message(chat_id, message_id, f"{text}\n\n({who})")
+            _edit_message(chat_id, message_id, f"{text}\n\n({html.escape(who)})", parse_mode="HTML")
         except Exception as e:
             traceback.print_exc()
             _edit_message(chat_id, message_id, f"{original_text}\n\n❌ Promokod yaratishda xato ({who}): {e}")

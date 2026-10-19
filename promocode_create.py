@@ -1,5 +1,6 @@
 """/promocode buyrug'i: bugun amal qiladigan, bir martalik 50% promokod yaratish
 (Uzum sahifasidagi "Создание промокода" formasi bilan bir xil sozlamalar)."""
+import html
 import secrets
 import string
 import time
@@ -56,9 +57,10 @@ def create_promocode(shop_id=DEFAULT_SHOP_ID, shop_title=None, discount_percent=
     client.create_promocode(code, int(time.time() * 1000), end_ms, discount_percent, QUANTITY_USE)
 
     full_code = f"{prefix}-{code}"
+    # HTML formatida: <code> ichidagi kod Telegram'da bosilganda nusxalanadi
     return (
-        f"🎟 Yangi promokod: {full_code}\n"
-        f"🏪 {shop_title or shop_id} ({shop_id}) · butun do'kon uchun\n"
+        f"🎟 Yangi promokod: <code>{html.escape(full_code)}</code>\n"
+        f"🏪 {html.escape(shop_title or shop_id)} ({shop_id}) · butun do'kon uchun\n"
         f"💸 Chegirma: {discount_percent}%\n"
         f"📅 Amal qiladi: {datetime.fromtimestamp(end_ms / 1000, TASHKENT):%d.%m.%Y} 23:59 gacha\n"
         f"🔢 {QUANTITY_USE} marta ishlatiladi"
