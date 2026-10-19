@@ -141,14 +141,21 @@ def run():
     added = []
     nastroyka_only = []
     bogsiz_unlinked = set()
+    shop_errors = []
 
     for shop_id in Config.UZUM_SHOP_IDS:
         try:
             process_shop(shop_id, prices_by_sku, added, nastroyka_only, bogsiz_unlinked)
         except Exception as e:
             print(f"[{shop_id}] Do'konni tekshirishda XATO - {e}")
+            shop_errors.append(f"do'kon {shop_id}: {e}")
 
     send_summary(added, nastroyka_only, sorted(bogsiz_unlinked))
+
+    # Do'kon xatolari jim yutilib ketmasligi uchun - sikl "xato bilan tugadi"
+    # deb belgilanadi va kuzatuvchi (watchdog) bu haqda Telegram'ga yozadi.
+    if shop_errors:
+        raise RuntimeError("; ".join(shop_errors))
 
 
 if __name__ == "__main__":

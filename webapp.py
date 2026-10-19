@@ -4,9 +4,9 @@ from flask import Flask, abort, request
 
 from bot_listener import _handle_callback
 from config import Config
+from heartbeat import record_run
 from lock_store import acquire_lock, release_lock
 from main import run
-from telegram_notify import send_text
 
 app = Flask(__name__)
 
@@ -16,8 +16,11 @@ def _run_cycle():
         return
     try:
         run()
+        record_run()
     except Exception as e:
-        send_text(f"❌ Promo-agent avtomatik tekshiruvda xato: {e}")
+        # Telegram'ga bu yerda emas, kuzatuvchi (watchdog.py) orqali yoziladi -
+        # u bir xil xatoni har 15 daqiqada takrorlamay, eslatib turadi.
+        record_run(error=e)
     finally:
         release_lock()
 
