@@ -1,4 +1,4 @@
-import sqlite3
+import requests
 
 from config import Config
 
@@ -7,31 +7,16 @@ SOLIQ_FOIZ = 0.011
 
 
 def get_prices_by_sku():
-    """Mahalliy ERP bazasidan uzum_sku -> mahsulot ma'lumotlari (narx, tannarx va
-    marja hisoblash uchun kerakli xarajatlar) lug'atini qaytaradi. Faqat uzum_sku
-    to'ldirilgan mahsulotlar qaytariladi."""
-    conn = sqlite3.connect(Config.ERP_DB_PATH)
-    conn.row_factory = sqlite3.Row
-    try:
-        rows = conn.execute(
-            "SELECT uzum_sku, sotish_narxi, tannarx, logistika, boshqa_harajat, nomi, ikpu "
-            "FROM mahsulotlar WHERE uzum_sku IS NOT NULL AND TRIM(uzum_sku) != ''"
-        ).fetchall()
-    finally:
-        conn.close()
-
-    prices = {}
-    for row in rows:
-        sku = row["uzum_sku"].strip()
-        prices[sku] = {
-            "sale_price": row["sotish_narxi"],
-            "tannarx": row["tannarx"],
-            "logistika": row["logistika"],
-            "boshqa_harajat": row["boshqa_harajat"],
-            "nomi": row["nomi"],
-            "ikpu": (row["ikpu"] or "").strip() or None,
-        }
-    return prices
+    """ERP (boshqa serverda, PythonAnywhere'da ishlaydi) narxlarini uning
+    /api/uzum-prices manzilidan oladi - ERP shu serverning o'zida emas,
+    shuning uchun lokal faylni to'g'ridan-to'g'ri o'qib bo'lmaydi."""
+    response = requests.get(
+        Config.ERP_API_URL,
+        params={"token": Config.ERP_API_TOKEN},
+        timeout=30,
+    )
+    response.raise_for_status()
+    return response.json()
 
 
 def hisobla_marja(narx, tannarx, logistika, boshqa_harajat):

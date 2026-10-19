@@ -28,7 +28,10 @@ class Config:
         if shop_id.strip()
     ]
 
-    ERP_DB_PATH = os.getenv("ERP_DB_PATH", r"C:\Users\VICTUS\Desktop\templates\erp.db")
+    # ERP boshqa serverda (PythonAnywhere) ishlaydi - narxlar uning
+    # /api/uzum-prices manzilidan, maxfiy token bilan olinadi.
+    ERP_API_URL = os.getenv("ERP_API_URL", "https://zedloop.pythonanywhere.com/api/uzum-prices")
+    ERP_API_TOKEN = os.getenv("ERP_API_TOKEN")
 
     # Narx (Uzum talab qiladigan eng kichik chegirma foizidan past tushmasligi uchun
     # zaxira - masalan agar Uzum 1% talab qilsa, biz shuncha + shu qiymat qilib qo'yamiz)
