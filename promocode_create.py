@@ -11,7 +11,7 @@ from promo_client import PromoClient
 TASHKENT = timezone(timedelta(hours=5))
 DEFAULT_SHOP_ID = "74301"  # DM SHOP
 DISCOUNT_PERCENT = 50  # foiz yozilmasa
-MIN_PERCENT = 1
+MIN_PERCENT = 2  # Uzum 1% ni "Validation failed" deb rad etadi
 # Uzum: chegirma mahsulot narxining yarmidan oshsa promokod ishlamaydi
 MAX_PERCENT = 50
 QUANTITY_USE = 1
