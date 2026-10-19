@@ -7,7 +7,7 @@ from config import Config
 from heartbeat import record_run
 from lock_store import acquire_lock, release_lock
 from main import run
-from returns_report import build_returns_report
+from returns_report import build_returns_reports
 from telegram_notify import send_text
 
 app = Flask(__name__)
@@ -29,7 +29,10 @@ def _run_cycle():
 
 def _send_returns():
     try:
-        send_text(build_returns_report())
+        detailed, short = build_returns_reports()
+        send_text(detailed)
+        if short:
+            send_text(short)
     except Exception as e:
         send_text(f"❌ Vozvratlarni olishda xato: {e}")
 

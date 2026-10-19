@@ -32,9 +32,13 @@ def _format_item(item):
     return line
 
 
-def build_returns_report():
+def build_returns_reports():
+    """Ikki xabar qaytaradi: (1) do'konlar bo'yicha batafsil ro'yxat,
+    (2) faqat akt raqamlari - Qaytarilganlar va Yaroqsizlar alohida
+    (omborda ko'chirib olish qulay bo'lishi uchun). Yuboradigan narsa
+    bo'lmasa, ikkinchisi None."""
     lines = ["📦 Berishga tayyor vozvratlar"]
-    jami = 0
+    all_ready = []
     for shop_id in Config.UZUM_SHOP_IDS:
         try:
             items = PromoClient(shop_id).list_returns()
@@ -44,11 +48,19 @@ def build_returns_report():
         ready = [x for x in items if x.get("status") == READY_STATUS]
         if not ready:
             continue
-        jami += len(ready)
+        all_ready.extend(ready)
         lines.append(f"\n🏪 Do'kon {shop_id} ({len(ready)} ta):")
         lines.extend(_format_item(x) for x in ready)
 
-    if jami == 0 and len(lines) == 1:
-        return "📦 Berishga tayyor vozvrat yo'q."
-    lines.append(f"\nJami: {jami} ta")
-    return "\n".join(lines)
+    if not all_ready:
+        if len(lines) == 1:
+            return "📦 Berishga tayyor vozvrat yo'q.", None
+        return "\n".join(lines), None
+    lines.append(f"\nJami: {len(all_ready)} ta")
+
+    short = []
+    for type_code, title in (("RETURN", "Qaytarishlar"), ("DEFECTED", "Yaroqsizlar")):
+        ids = [str(x["id"]) for x in all_ready if x.get("type") == type_code]
+        if ids:
+            short.append(f"{title} ({len(ids)} ta):\n" + "\n".join(ids))
+    return "\n".join(lines), "\n\n".join(short) or None
