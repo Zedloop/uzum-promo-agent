@@ -42,7 +42,7 @@ def notify_product_rejected(shop_id, sale_id, sale_title, product_id, skus):
     )
 
     nomi = skus[0]["nomi"]
-    lines = [f"вљ пёЏ Narx mos kelmadi: {nomi}", f"Aksiya: '{sale_title}'"]
+    lines = [f"⚠️ Narx mos kelmadi: {nomi}", f"Aksiya: '{sale_title}'"]
     for s in skus:
         lines.append(
             f"- {s['sku_code']}: sizning narxingiz {s['your_price']:,} so'm - rad etildi, "
@@ -56,8 +56,8 @@ def notify_product_rejected(shop_id, sale_id, sale_title, product_id, skus):
         "reply_markup": {
             "inline_keyboard": [
                 [
-                    {"text": "вњ… Shu narxda qo'shish", "callback_data": f"add:{decision_id}"},
-                    {"text": "вљ™пёЏ Nastroykadan sozlash kerak", "callback_data": f"skip:{decision_id}"},
+                    {"text": "✅ Shu narxda qo'shish", "callback_data": f"add:{decision_id}"},
+                    {"text": "⚙️ Nastroykadan sozlash kerak", "callback_data": f"skip:{decision_id}"},
                 ]
             ]
         },
@@ -98,9 +98,9 @@ def send_summary(added, nastroyka_only, bogsiz_unlinked=None):
     if not added and not nastroyka_only and not bogsiz_unlinked:
         return
 
-    lines = ["рџ“‹ Aksiya tekshiruvi yakunlandi"]
+    lines = ["📋 Aksiya tekshiruvi yakunlandi"]
 
-    lines.append(f"\nвњ… Aksiyaga qo'shildi ({len(added)}):")
+    lines.append(f"\n✅ Aksiyaga qo'shildi ({len(added)}):")
     if added:
         for item in added:
             lines.append(
@@ -110,7 +110,7 @@ def send_summary(added, nastroyka_only, bogsiz_unlinked=None):
     else:
         lines.append("- yo'q")
 
-    lines.append(f"\nвљ™пёЏ Faqat nastroykadan narx sozlandi, aksiyadan rad etildi ({len(nastroyka_only)}):")
+    lines.append(f"\n⚙️ Faqat nastroykadan narx sozlandi, aksiyadan rad etildi ({len(nastroyka_only)}):")
     if nastroyka_only:
         for item in nastroyka_only:
             lines.append(
@@ -121,7 +121,7 @@ def send_summary(added, nastroyka_only, bogsiz_unlinked=None):
         lines.append("- yo'q")
 
     if bogsiz_unlinked:
-        lines.append(f"\nрџ”— ERP'da bog'lanmagan SKU'lar ({len(bogsiz_unlinked)}) - Uzum sozlamalaridan bog'lang:")
+        lines.append(f"\n🔗 ERP'da bog'lanmagan SKU'lar ({len(bogsiz_unlinked)}) - Uzum sozlamalaridan bog'lang:")
         for shop_id, sku_code in bogsiz_unlinked:
             lines.append(f"- {sku_code} (do'kon {shop_id})")
 
