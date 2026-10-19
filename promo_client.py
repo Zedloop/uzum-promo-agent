@@ -1,3 +1,5 @@
+import base64
+
 import requests
 
 from config import Config
@@ -88,6 +90,25 @@ class PromoClient:
             if len(items) < size:
                 return result
             page += 1
+
+    def list_invoices(self, size=100):
+        """'Ta'minlashlar -> FBO' ro'yxati (barcha sahifalar)."""
+        url = f"{self.product_base_url}/shop/{self.shop_id}/invoice"
+        result = []
+        page = 0
+        while True:
+            items = self._request("GET", url, params={"page": page, "size": size}).json() or []
+            result.extend(items)
+            if len(items) < size:
+                return result
+            page += 1
+
+    def get_invoice_pdf(self, invoice_id):
+        """Ta'minlash aktining PDF fayli (bytes). Uzum uni JSON ichida base64
+        ko'rinishida qaytaradi."""
+        url = f"{self.product_base_url}/shop/{self.shop_id}/invoice/printInvoice"
+        data = self._request("GET", url, params={"invoiceId": invoice_id}).json()
+        return base64.b64decode(data["pdf"])
 
     def list_products(self, size=100):
         """Do'kondagi barcha mahsulotlar (SKU qoldiqlari bilan). Filtrsiz -

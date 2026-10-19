@@ -33,6 +33,17 @@ def send_text(text):
             pass
 
 
+def send_document(filename, content, caption=""):
+    if not Config.TELEGRAM_BOT_TOKEN or not Config.TELEGRAM_CHAT_ID:
+        return
+    requests.post(
+        f"{_api_base()}/sendDocument",
+        data={"chat_id": Config.TELEGRAM_CHAT_ID, "caption": caption[:1024]},
+        files={"document": (filename, content, "application/pdf")},
+        timeout=60,
+    ).raise_for_status()
+
+
 def notify_product_rejected(shop_id, sale_id, sale_title, product_id, skus):
     """Mahsulot (uning barcha mos SKU'lari bilan birga) aksiyadan rad
     etilganda, har bir SKU uchun Uzum tavsiya qilgan narx va marjani

@@ -3,6 +3,7 @@ import threading
 from flask import Flask, abort, request
 
 from bot_listener import _handle_callback
+from akt_report import send_created_acts
 from config import Config
 from heartbeat import record_run
 from lock_store import acquire_lock, release_lock
@@ -45,6 +46,13 @@ def _send_timeslot():
         send_text(f"❌ Time slot tahlilida xato: {e}")
 
 
+def _send_acts():
+    try:
+        send_created_acts()
+    except Exception as e:
+        send_text(f"❌ Aktlarni yuborishda xato: {e}")
+
+
 @app.route("/run-check")
 def run_check_endpoint():
     token = request.args.get("token", "")
@@ -76,6 +84,8 @@ def telegram_webhook():
             threading.Thread(target=_send_returns, daemon=True).start()
         elif name == "/timeslot":
             threading.Thread(target=_send_timeslot, daemon=True).start()
+        elif name == "/akt":
+            threading.Thread(target=_send_acts, daemon=True).start()
 
     callback = update.get("callback_query")
     if callback:
