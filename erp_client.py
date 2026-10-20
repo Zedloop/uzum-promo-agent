@@ -2,7 +2,7 @@ import requests
 
 from config import Config
 
-KOMISSIYA_FOIZ = 0.25
+STANDART_KOMISSIYA_FOIZ = 25  # ERP'da mahsulotga komissiya kiritilmagan bo'lsa
 SOLIQ_FOIZ = 0.011
 
 
@@ -19,10 +19,13 @@ def get_prices_by_sku():
     return response.json()
 
 
-def hisobla_marja(narx, tannarx, logistika, boshqa_harajat):
+def hisobla_marja(narx, tannarx, logistika, boshqa_harajat, komissiya_foiz=None):
     """ERP sahifasidagi bilan bir xil formula: komissiya+soliq+logistika+boshqa
-    xarajatlarni ayirib, sof foyda foizini hisoblaydi."""
-    komissiya = narx * KOMISSIYA_FOIZ
+    xarajatlarni ayirib, sof foyda foizini hisoblaydi. komissiya_foiz - ERP'da
+    shu mahsulotga kiritilgan foiz (masalan 25)."""
+    if komissiya_foiz is None:
+        komissiya_foiz = STANDART_KOMISSIYA_FOIZ
+    komissiya = narx * komissiya_foiz / 100
     soliq = narx * SOLIQ_FOIZ
     jami = komissiya + (logistika or 0) + soliq + (boshqa_harajat or 0)
     tushum = narx - jami
