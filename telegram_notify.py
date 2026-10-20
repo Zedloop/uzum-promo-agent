@@ -1,3 +1,5 @@
+import os
+
 import requests
 
 from config import Config
@@ -59,6 +61,59 @@ def send_document(filename, content, caption=""):
     ).raise_for_status()
 
 
+def _som(value):
+    return f"{int(value):,}".replace(",", " ")
+
+
+def _short_codes(codes):
+    """'BSST-MIKRAFONK9-2tamic', 'BSST-MIKRAFONK9-1iphone' -> '2tamic', '1iphone'
+    (umumiy boshlanishni olib tashlaymiz - xabar o'qilishi oson bo'lsin)."""
+    if len(codes) < 2:
+        return {c: c for c in codes}
+    prefix = os.path.commonprefix(codes)
+    prefix = prefix[: prefix.rfind("-") + 1] if "-" in prefix else ""
+    return {c: c[len(prefix):] or c for c in codes}
+
+
+def _rejected_text(sale_title, skus, others, reason):
+    short = _short_codes([s["sku_code"] for s in skus] + [o["sku_code"] for o in others])
+    # Uzum tavsiyasi - aksiyada ruxsat etilgan eng yuqori narx. ERP narxi
+    # undan baland bo'lgan bitta SKU ham butun mahsulotni rad ettiradi.
+    qimmat = [s for s in skus if s["your_price"] > s["recommended_price"]]
+
+    lines = [
+        "⚠️ Aksiyaga qo'shilmadi - qaroringiz kerak",
+        "",
+        f"📦 {skus[0]['nomi']}",
+        f"🏷 {sale_title}",
+        "",
+    ]
+    if qimmat:
+        nomlar = ", ".join(short[s["sku_code"]] for s in qimmat)
+        lines.append(f"❗️ Sabab: {nomlar} - ERP narxi Uzum ruxsat bergan narxdan qimmat.")
+    elif others:
+        lines.append("❗️ Sabab: ba'zi SKU'lar ERP'da yo'q, ular chegirmasiz qolib ketdi.")
+    elif reason:
+        lines.append(f"❗️ Sabab: {reason}")
+
+    lines += ["", "ERP narxi → Uzum ruxsat bergan narx:"]
+    for s in skus:
+        belgi = "❌" if s in qimmat else "✅"
+        lines.append(
+            f"{belgi} {short[s['sku_code']]}: {_som(s['your_price'])} → {_som(s['recommended_price'])} so'm"
+            f" (marja {s['marja_foiz']:.0f}%)"
+        )
+    for o in others:
+        lines.append(f"➖ {short[o['sku_code']]}: ERP'da yo'q → {_som(o['recommended_price'])} so'm")
+
+    lines += [
+        "",
+        "✅ Qo'shish - hamma SKU o'ng tomondagi Uzum narxida aksiyaga qo'shiladi",
+        "⚙️ Nastroyka - aksiyaga qo'shilmaydi, Sotish narxi ERP narxida qoladi",
+    ]
+    return "\n".join(lines)
+
+
 def notify_product_rejected(shop_id, sale_id, sale_title, product_id, skus, others=None, reason=None):
     """Mahsulot (uning barcha mos SKU'lari bilan birga) aksiyadan rad
     etilganda, har bir SKU uchun Uzum tavsiya qilgan narx va marjani
@@ -78,27 +133,7 @@ def notify_product_rejected(shop_id, sale_id, sale_title, product_id, skus, othe
         }
     )
 
-    nomi = skus[0]["nomi"]
-    lines = [f"⚠️ Narx mos kelmadi: {nomi}", f"Aksiya: '{sale_title}'"]
-    # Uzum tavsiyasi aksiyadagi eng yuqori ruxsat etilgan narx - ERP narxi
-    # undan baland bo'lgan SKU butun mahsulotni rad ettiradi.
-    for s in skus:
-        belgi = "✅" if s["your_price"] <= s["recommended_price"] else "❌"
-        lines.append(
-            f"{belgi} {s['sku_code']}: ERP {s['your_price']:,} so'm, "
-            f"Uzum chegarasi {s['recommended_price']:,} so'm (shu narxda marja: {s['marja_foiz']:.1f}%)".replace(",", " ")
-        )
-    # Uzum mahsulotning BARCHA SKU'larini birga talab qiladi - ERP'da
-    # bog'lanmaganlari ham "qo'shish" bosilsa Uzum tavsiya narxida ketadi,
-    # shuning uchun ularni ham oldindan ko'rsatamiz.
-    for o in others or []:
-        lines.append(
-            f"➖ {o['sku_code']}: ERP'da yo'q - Uzum tavsiyasi {o['recommended_price']:,} so'm bilan qo'shiladi".replace(",", " ")
-        )
-    if reason:
-        lines.append(f"Sabab: {reason}")
-    lines.append("\"✅ Shu narxda qo'shish\" - barcha SKU'lar Uzum chegarasi narxida qo'shiladi.")
-    text = "\n".join(lines)
+    text = _rejected_text(sale_title, skus, others or [], reason)
 
     payload = {
         "chat_id": Config.TELEGRAM_CHAT_ID,
@@ -106,8 +141,8 @@ def notify_product_rejected(shop_id, sale_id, sale_title, product_id, skus, othe
         "reply_markup": {
             "inline_keyboard": [
                 [
-                    {"text": "✅ Shu narxda qo'shish", "callback_data": f"add:{decision_id}"},
-                    {"text": "⚙️ Nastroykadan sozlash kerak", "callback_data": f"skip:{decision_id}"},
+                    {"text": "✅ Qo'shish (Uzum narxida)", "callback_data": f"add:{decision_id}"},
+                    {"text": "⚙️ Nastroyka (ERP narxi)", "callback_data": f"skip:{decision_id}"},
                 ]
             ]
         },

@@ -94,7 +94,7 @@ def _handle_callback(callback):
                 decision["sale_id"],
                 [{"productId": decision["product_id"], "skuList": sku_list_payload}],
             )
-            _edit_message(chat_id, message_id, f"{original_text}\n\n✅ Uzum tavsiya narxlarida qo'shildi ({who}).")
+            _edit_message(chat_id, message_id, f"{original_text}\n\n✅ BAJARILDI: aksiyaga Uzum narxlarida qo'shildi ({who}).")
         except Exception as e:
             traceback.print_exc()
             _edit_message(chat_id, message_id, f"{original_text}\n\n❌ Qo'shishda xato ({who}): {e}")
@@ -113,7 +113,7 @@ def _handle_callback(callback):
             _edit_message(
                 chat_id,
                 message_id,
-                f"{original_text}\n\n⚙️ Uzum'dagi mahsulot narxlari moslashtirildi ({who}).",
+                f"{original_text}\n\n⚙️ BAJARILDI: nastroyka sozlandi, Sotish narxi = ERP narxi. Aksiyaga qo'shilmadi ({who}).",
             )
         except Exception as e:
             traceback.print_exc()
