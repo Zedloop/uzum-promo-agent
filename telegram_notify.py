@@ -80,20 +80,24 @@ def notify_product_rejected(shop_id, sale_id, sale_title, product_id, skus, othe
 
     nomi = skus[0]["nomi"]
     lines = [f"⚠️ Narx mos kelmadi: {nomi}", f"Aksiya: '{sale_title}'"]
+    # Uzum tavsiyasi aksiyadagi eng yuqori ruxsat etilgan narx - ERP narxi
+    # undan baland bo'lgan SKU butun mahsulotni rad ettiradi.
     for s in skus:
+        belgi = "✅" if s["your_price"] <= s["recommended_price"] else "❌"
         lines.append(
-            f"- {s['sku_code']}: sizning narxingiz {s['your_price']:,} so'm - rad etildi, "
-            f"Uzum tavsiyasi {s['recommended_price']:,} so'm (marja: {s['marja_foiz']:.1f}%)".replace(",", " ")
+            f"{belgi} {s['sku_code']}: ERP {s['your_price']:,} so'm, "
+            f"Uzum chegarasi {s['recommended_price']:,} so'm (shu narxda marja: {s['marja_foiz']:.1f}%)".replace(",", " ")
         )
     # Uzum mahsulotning BARCHA SKU'larini birga talab qiladi - ERP'da
     # bog'lanmaganlari ham "qo'shish" bosilsa Uzum tavsiya narxida ketadi,
     # shuning uchun ularni ham oldindan ko'rsatamiz.
     for o in others or []:
         lines.append(
-            f"- {o['sku_code']}: ERP'da yo'q - Uzum tavsiyasi {o['recommended_price']:,} so'm bilan qo'shiladi".replace(",", " ")
+            f"➖ {o['sku_code']}: ERP'da yo'q - Uzum tavsiyasi {o['recommended_price']:,} so'm bilan qo'shiladi".replace(",", " ")
         )
     if reason:
         lines.append(f"Sabab: {reason}")
+    lines.append("\"✅ Shu narxda qo'shish\" - barcha SKU'lar Uzum chegarasi narxida qo'shiladi.")
     text = "\n".join(lines)
 
     payload = {
