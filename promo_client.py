@@ -8,6 +8,30 @@ from uzum_auth import fetch_new_token, get_valid_token
 PRICE_MARKUP = 50000  # "Narx" (fullPrice) har doim "Sotish narxi"dan shuncha yuqori qilib qo'yiladi
 
 
+UZUM_ERROR_NAMES = {
+    "DISCOUNT_NOT_ENOUGH": "chegirma aksiya talab qilganidan kam",
+    "PRODUCT_SKU_LIST_INCOMPLETE": "mahsulotning barcha SKU'lari yuborilmagan",
+}
+
+
+def _uzum_error_text(response):
+    try:
+        err = (response.json().get("errors") or [{}])[0]
+        code, message = err.get("code"), err.get("message")
+    except Exception:
+        code, message = None, None
+    if code in UZUM_ERROR_NAMES:
+        return f"{UZUM_ERROR_NAMES[code]} ({code})"
+    if code or message:
+        return f"{response.status_code} {code}: {message}"
+    return f"{response.status_code} {response.reason}"
+
+
+def uzum_recommended_price(sku):
+    """Aksiya SKU'si uchun Uzum tavsiya qilgan narx (bo'lmasa - joriy narx)."""
+    return int(sku.get("recommendedPrice") or sku.get("currentSellPrice") or 0)
+
+
 class PromoClient:
     """Uzum seller 'Marketing / Aksiyalar' (katta savdo) API'si bilan ishlash.
 
@@ -39,7 +63,10 @@ class PromoClient:
         if response.status_code == 401 and Config.UZUM_USERNAME and Config.UZUM_PASSWORD:
             self._set_auth_header(fetch_new_token())
             response = self.session.request(method, url, **kwargs)
-        response.raise_for_status()
+        if not response.ok:
+            # "417 Client Error: Expectation Failed" o'rniga Uzum'ning o'z
+            # izohini ko'rsatamiz (masalan DISCOUNT_NOT_ENOUGH)
+            raise requests.HTTPError(_uzum_error_text(response), response=response)
         return response
 
     def list_sales(self, sale_type="ALL", page=0, size=24):

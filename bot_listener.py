@@ -8,8 +8,8 @@ import requests
 from config import Config, validate
 from decision_store import get_offset, set_offset
 from telegram_notify import _answer_callback, _edit_message, _api_base
-from decision_store import pop_decision
-from promo_client import PromoClient
+from decision_store import mark_settled, pop_decision
+from promo_client import PromoClient, uzum_recommended_price
 from promocode_create import create_promocode, parse_percent
 
 SKIP_MARKUP = 49990  # "Nastroykadan sozlash kerak" tugmasi: Narx = ERP narxi + shuncha, Chegirma = shuncha
@@ -84,7 +84,11 @@ def _handle_callback(callback):
                 if match:
                     sku_list_payload.append({"skuId": sku_id, "newSalePrice": match["recommended_price"]})
                 else:
-                    sku_list_payload.append({"skuId": sku_id, "newSalePrice": int(sku.get("currentSellPrice") or 0)})
+                    # ERP'da bog'lanmagan SKU - joriy (chegirmasiz) narxda
+                    # yuborsak Uzum butun mahsulotni DISCOUNT_NOT_ENOUGH deb
+                    # rad etadi, shuning uchun bu ham Uzum tavsiyasida
+                    # (xabarda oldindan ko'rsatilgan).
+                    sku_list_payload.append({"skuId": sku_id, "newSalePrice": uzum_recommended_price(sku)})
 
             client.add_products(
                 decision["sale_id"],
@@ -102,6 +106,7 @@ def _handle_callback(callback):
             # (ERP'da bog'lanmagan) SKU'lari o'zgarishsiz qoldiriladi.
             sku_updates = {s["sku_id"]: {"new_sell_price": s["your_price"], "ikpu": s.get("ikpu")} for s in skus}
             client.update_product_skus(decision["product_id"], sku_updates, markup=SKIP_MARKUP)
+            mark_settled(decision["shop_id"], decision["sale_id"], decision["product_id"])
             # Aksiyaga qo'shishga darhol urinmaymiz - narx shunday sozlangan
             # holida qoladi, aksiyaga qo'shish keyingi davriy tekshiruvda
             # (yoki foydalanuvchi o'zi) amalga oshiriladi.

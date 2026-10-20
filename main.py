@@ -4,8 +4,9 @@ import time
 from datetime import datetime
 
 from config import Config, validate
+from decision_store import has_pending, is_settled
 from erp_client import get_prices_by_sku, hisobla_marja
-from promo_client import PromoClient
+from promo_client import PromoClient, uzum_recommended_price
 from telegram_notify import notify_product_rejected, send_summary
 
 # Faqat "Amal qiladi" (haqiqatan boshlangan) aksiyalarga qo'shishga urinamiz.
@@ -34,6 +35,12 @@ def process_shop(shop_id, prices_by_sku, added, nastroyka_only, bogsiz_unlinked)
         qoshildi = 0
         for product in items:
             product_id = product.get("productId")
+
+            # Telegram'da javob kutilayotgan yoki "⚙️ Nastroykadan sozlash"
+            # tanlangan mahsulotga tegmaymiz - har 15 daqiqada qayta
+            # sozlab, qayta xabar yubormaslik uchun.
+            if has_pending(shop_id, sale_id, product_id) or is_settled(shop_id, sale_id, product_id):
+                continue
 
             skus = client.get_product_skus(sale_id, product_id)
             time.sleep(0.3)
@@ -112,12 +119,20 @@ def process_shop(shop_id, prices_by_sku, added, nastroyka_only, bogsiz_unlinked)
                     _, m["marja_foiz"] = hisobla_marja(
                         m["recommended_price"], m["tannarx"], m["logistika"], m["boshqa_harajat"]
                     )
+                matched_ids = {m["sku_id"] for m in matched}
+                others = [
+                    {"sku_code": s.get("skuTitle"), "recommended_price": uzum_recommended_price(s)}
+                    for s in skus
+                    if s.get("skuId") not in matched_ids
+                ]
                 notify_product_rejected(
                     shop_id=shop_id,
                     sale_id=sale_id,
                     sale_title=title,
                     product_id=product_id,
                     skus=matched,
+                    others=others,
+                    reason=str(e),
                 )
                 # Faqat nastroyka HAQIQATAN muvaffaqiyatli bo'lgan hollardagina
                 # "narx sozlandi" ro'yxatiga qo'shamiz - aks holda hech narsa

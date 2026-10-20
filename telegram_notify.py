@@ -59,7 +59,7 @@ def send_document(filename, content, caption=""):
     ).raise_for_status()
 
 
-def notify_product_rejected(shop_id, sale_id, sale_title, product_id, skus):
+def notify_product_rejected(shop_id, sale_id, sale_title, product_id, skus, others=None, reason=None):
     """Mahsulot (uning barcha mos SKU'lari bilan birga) aksiyadan rad
     etilganda, har bir SKU uchun Uzum tavsiya qilgan narx va marjani
     ko'rsatib, BITTA xabar bilan 'shu narxda qo'shish' / 'nastroykadan
@@ -85,6 +85,15 @@ def notify_product_rejected(shop_id, sale_id, sale_title, product_id, skus):
             f"- {s['sku_code']}: sizning narxingiz {s['your_price']:,} so'm - rad etildi, "
             f"Uzum tavsiyasi {s['recommended_price']:,} so'm (marja: {s['marja_foiz']:.1f}%)".replace(",", " ")
         )
+    # Uzum mahsulotning BARCHA SKU'larini birga talab qiladi - ERP'da
+    # bog'lanmaganlari ham "qo'shish" bosilsa Uzum tavsiya narxida ketadi,
+    # shuning uchun ularni ham oldindan ko'rsatamiz.
+    for o in others or []:
+        lines.append(
+            f"- {o['sku_code']}: ERP'da yo'q - Uzum tavsiyasi {o['recommended_price']:,} so'm bilan qo'shiladi".replace(",", " ")
+        )
+    if reason:
+        lines.append(f"Sabab: {reason}")
     text = "\n".join(lines)
 
     payload = {
