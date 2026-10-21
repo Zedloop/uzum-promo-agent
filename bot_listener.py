@@ -74,15 +74,18 @@ def _handle_callback(callback):
         try:
             client = PromoClient(decision["shop_id"])
             # Uzum bitta mahsulotning BARCHA SKU'larini birga talab qiladi -
-            # shuning uchun joriy to'liq SKU ro'yxatini qayta olib, mos
-            # kelganlarini tavsiya narxida, qolganlarini o'zgarishsiz qo'shamiz.
+            # joriy to'liq SKU ro'yxatini qayta olamiz. Har bir SKU ERP
+            # narxida qo'shiladi; faqat ERP narxi Uzum chegarasidan oshgan
+            # SKU chegara narxiga tushiriladi (hammasini chegaraga ko'tarib
+            # yubormaslik uchun).
             all_skus = client.get_product_skus(decision["sale_id"], decision["product_id"])
             sku_list_payload = []
             for sku in all_skus:
                 sku_id = sku.get("skuId")
                 match = next((s for s in skus if s["sku_id"] == sku_id), None)
                 if match:
-                    sku_list_payload.append({"skuId": sku_id, "newSalePrice": match["recommended_price"]})
+                    narx = min(int(match["your_price"]), uzum_recommended_price(sku))
+                    sku_list_payload.append({"skuId": sku_id, "newSalePrice": narx})
                 else:
                     # ERP'da bog'lanmagan SKU - joriy (chegirmasiz) narxda
                     # yuborsak Uzum butun mahsulotni DISCOUNT_NOT_ENOUGH deb
@@ -94,7 +97,7 @@ def _handle_callback(callback):
                 decision["sale_id"],
                 [{"productId": decision["product_id"], "skuList": sku_list_payload}],
             )
-            _edit_message(chat_id, message_id, f"{original_text}\n\n✅ BAJARILDI: aksiyaga Uzum narxlarida qo'shildi ({who}).")
+            _edit_message(chat_id, message_id, f"{original_text}\n\n✅ BAJARILDI: aksiyaga qo'shildi (ERP narxida, chegaradan oshganlari Uzum narxida) ({who}).")
         except Exception as e:
             traceback.print_exc()
             _edit_message(chat_id, message_id, f"{original_text}\n\n❌ Qo'shishda xato ({who}): {e}")

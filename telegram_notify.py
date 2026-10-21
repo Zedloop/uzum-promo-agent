@@ -108,7 +108,7 @@ def _rejected_text(sale_title, skus, others, reason):
 
     lines += [
         "",
-        "✅ Qo'shish - hamma SKU o'ng tomondagi Uzum narxida aksiyaga qo'shiladi",
+        "✅ Qo'shish - ✅ SKU'lar ERP narxida, ❌ va ➖ SKU'lar Uzum narxida aksiyaga qo'shiladi",
         "⚙️ Nastroyka - aksiyaga qo'shilmaydi, Sotish narxi ERP narxida qoladi",
     ]
     return "\n".join(lines)
@@ -141,7 +141,7 @@ def notify_product_rejected(shop_id, sale_id, sale_title, product_id, skus, othe
         "reply_markup": {
             "inline_keyboard": [
                 [
-                    {"text": "✅ Qo'shish (Uzum narxida)", "callback_data": f"add:{decision_id}"},
+                    {"text": "✅ Qo'shish", "callback_data": f"add:{decision_id}"},
                     {"text": "⚙️ Nastroyka (ERP narxi)", "callback_data": f"skip:{decision_id}"},
                 ]
             ]
