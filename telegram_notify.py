@@ -75,6 +75,12 @@ def _short_codes(codes):
     return {c: c[len(prefix):] or c for c in codes}
 
 
+def _sale_name(title):
+    """Uzum aksiya nomlari ko'pincha "ruscha // o'zbekcha" ko'rinishida -
+    xabarda faqat o'zbekcha qismini ko'rsatamiz."""
+    return title.split("//")[-1].strip() if title and "//" in title else (title or "")
+
+
 def _rejected_text(sale_title, skus, others, reason):
     short = _short_codes([s["sku_code"] for s in skus] + [o["sku_code"] for o in others])
     # Uzum tavsiyasi - aksiyada ruxsat etilgan eng yuqori narx. ERP narxi
@@ -85,7 +91,7 @@ def _rejected_text(sale_title, skus, others, reason):
         "⚠️ Aksiyaga qo'shilmadi - qaroringiz kerak",
         "",
         f"📦 {skus[0]['nomi']}",
-        f"🏷 {sale_title}",
+        f"🏷 {_sale_name(sale_title)}",
         "",
     ]
     if qimmat:
@@ -190,7 +196,7 @@ def send_summary(added, nastroyka_only, bogsiz_unlinked=None):
         for item in added:
             lines.append(
                 f"- {item['sku_code']} ({item['nomi']}) -> {item['price']:,} so'm "
-                f"['{item['sale_title']}']".replace(",", " ")
+                f"— {_sale_name(item['sale_title'])}".replace(",", " ")
             )
     else:
         lines.append("- yo'q")
@@ -200,7 +206,7 @@ def send_summary(added, nastroyka_only, bogsiz_unlinked=None):
         for item in nastroyka_only:
             lines.append(
                 f"- {item['sku_code']} ({item['nomi']}) -> {item['price']:,} so'm "
-                f"['{item['sale_title']}']".replace(",", " ")
+                f"— {_sale_name(item['sale_title'])}".replace(",", " ")
             )
     else:
         lines.append("- yo'q")
