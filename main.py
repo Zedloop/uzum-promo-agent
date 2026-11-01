@@ -14,6 +14,15 @@ from telegram_notify import notify_product_rejected, send_summary
 # bildiradi - bunga hozir qo'shib bo'lmaydi, shuning uchun kerak emas.
 ACTIVE_STATUSES = {"ACTIVE"}
 
+# "Soat chegirmalari" - Uzum har kuni alohida ochadigan, faqat 20:00-21:00
+# ishlaydigan aksiyalar. Foydalanuvchi ularda qatnashmaslikni so'ragan.
+HOURLY_SALE_MARKERS = ("soat chegirmalari", "скидки часа")
+
+
+def is_hourly_sale(title):
+    t = (title or "").lower()
+    return any(m in t for m in HOURLY_SALE_MARKERS)
+
 
 def process_shop(shop_id, prices_by_sku, added, nastroyka_only, bogsiz_unlinked):
     client = PromoClient(shop_id)
@@ -26,6 +35,8 @@ def process_shop(shop_id, prices_by_sku, added, nastroyka_only, bogsiz_unlinked)
 
         sale_id = sale.get("id")
         title = sale.get("title")
+        if is_hourly_sale(title):
+            continue
         suitable = client.get_suitable_products(sale_id)
         items = suitable.get("content") if isinstance(suitable, dict) else suitable
         if not items:
