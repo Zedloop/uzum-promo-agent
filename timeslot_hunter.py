@@ -16,6 +16,7 @@ import os
 import time
 import traceback
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 
 import requests
@@ -97,11 +98,18 @@ def _edit(message_id, text, keyboard=None):
     _tg("editMessageText", payload)
 
 
+_titles_cache = {"at": 0, "titles": {}}
+
+
 def _shop_titles():
-    try:
-        return PromoClient(Config.UZUM_SHOP_IDS[0]).list_shops()
-    except Exception:
-        return {}
+    # Do'kon nomlari deyarli o'zgarmaydi - har /slot da qayta so'ramaymiz
+    if time.time() - _titles_cache["at"] > 3600:
+        try:
+            _titles_cache["titles"] = PromoClient(Config.UZUM_SHOP_IDS[0]).list_shops()
+            _titles_cache["at"] = time.time()
+        except Exception:
+            pass
+    return _titles_cache["titles"]
 
 
 # ---------- 1-qadam: nakladnoy tanlash ----------
@@ -109,10 +117,14 @@ def _shop_titles():
 def _load_invoices():
     """Barcha do'konlardagi 'Yaratilgan' nakladnoylar (slotni hali
     o'zgartirish mumkin bo'lganlari)."""
-    titles = _shop_titles()
+    # Do'konlar bir-birini kutmasin - parallel so'raymiz
+    with ThreadPoolExecutor(len(Config.UZUM_SHOP_IDS) + 1) as ex:
+        titles_job = ex.submit(_shop_titles)
+        per_shop = list(ex.map(lambda s: (s, PromoClient(s).list_invoices()), Config.UZUM_SHOP_IDS))
+        titles = titles_job.result()
     result = []
-    for shop_id in Config.UZUM_SHOP_IDS:
-        for inv in PromoClient(shop_id).list_invoices():
+    for shop_id, invoices in per_shop:
+        for inv in invoices:
             if (inv.get("invoiceStatus") or {}).get("value") != "CREATED":
                 continue
             if (inv.get("remainingAmountOfUpdates") or 0) <= 0:
@@ -158,24 +170,26 @@ def _invoice_screen(draft):
 
 
 def start_picker():
-    """/slot buyrug'i."""
+    """/slot buyrug'i. Darhol "yuklanmoqda" deb javob beramiz, ro'yxat
+    tayyor bo'lgach shu xabarni o'zgartiramiz."""
+    msg_id = _send("⏳ Nakladnoylar yuklanmoqda...")
+    if not msg_id:
+        return
     try:
         invoices = _load_invoices()
     except Exception as e:
-        _send(f"❌ Nakladnoylarni olishda xato: {e}")
+        _edit(msg_id, f"❌ Nakladnoylarni olishda xato: {e}")
         return
     if not invoices:
-        _send("📦 Slot qo'yish mumkin bo'lgan «Yaratilgan» nakladnoy yo'q.\n"
-              "Avval Uzum'da nakladnoy yarating, keyin /slot ni qayta yozing.")
+        _edit(msg_id, "📦 Slot qo'yish mumkin bo'lgan «Yaratilgan» nakladnoy yo'q.\n"
+                      "Avval Uzum'da nakladnoy yarating, keyin /slot ni qayta yozing.")
         return
     draft = {"invoices": invoices, "sel": [], "dates": [], "created": time.time()}
-    text, keyboard = _invoice_screen(draft)
-    msg_id = _send(text, keyboard)
-    if msg_id:
-        with _state() as st:
-            # eski (1 kundan oshgan) qoralamalarni tozalaymiz
-            st["drafts"] = {k: v for k, v in st["drafts"].items() if time.time() - v.get("created", 0) < 86400}
-            st["drafts"][str(msg_id)] = draft
+    with _state() as st:
+        # eski (1 kundan oshgan) qoralamalarni tozalaymiz
+        st["drafts"] = {k: v for k, v in st["drafts"].items() if time.time() - v.get("created", 0) < 86400}
+        st["drafts"][str(msg_id)] = draft
+    _edit(msg_id, *_invoice_screen(draft))
 
 
 # ---------- 2-qadam: sana tanlash ----------
