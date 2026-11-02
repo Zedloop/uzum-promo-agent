@@ -119,6 +119,10 @@ def _load_invoices():
                 continue
             stock = inv.get("stock") or {}
             res = inv.get("timeSlotReservation") or {}
+            # Sloti o'tib ketgan eski nakladnoylar (Uzum ularni bekor qilishga
+            # ham ruxsat bermaydi) - ro'yxatni chalkashtirmasin
+            if res.get("timeFrom") and res["timeFrom"] < time.time() * 1000:
+                continue
             result.append({
                 "shop": shop_id,
                 "shop_title": titles.get(shop_id, shop_id),
