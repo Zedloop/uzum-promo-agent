@@ -25,6 +25,8 @@ REVIEW_HEALTH_URL = os.getenv("REVIEW_HEALTH_URL", "https://zedloop.pythonanywhe
 PROMO_MAX_AGE = int(os.getenv("PROMO_MAX_AGE_MINUTES", "75")) * 60    # cron har 15 daqiqada
 REVIEW_MAX_AGE = int(os.getenv("REVIEW_MAX_AGE_MINUTES", "35")) * 60  # cron har 10 daqiqada
 REMIND_SECONDS = 6 * 3600
+SLOT_STATE_FILE = os.path.join(os.path.dirname(__file__), "data", "slot_hunts.json")
+SLOT_MAX_AGE = 3 * 60  # qidiruvchi har 5 s da yozadi - 3 daqiqa jim bo'lsa to'xtagan
 # Tarmoq tekshiruvlari bir martalik uzilishda "to'xtadi" demasligi uchun -
 # ketma-ket shuncha marta muvaffaqiyatsiz bo'lsagina xabar beriladi.
 NETWORK_FAIL_THRESHOLD = 2
@@ -93,6 +95,21 @@ def check_erp():
     return None
 
 
+def check_slot_hunter(now):
+    """Time slot qidiruvchi (uzum-slot-hunter xizmati) har 5 soniyada
+    data/slot_hunts.json ga "heartbeat" yozadi."""
+    try:
+        with open(SLOT_STATE_FILE, encoding="utf-8") as f:
+            hb = json.load(f).get("heartbeat")
+    except FileNotFoundError:
+        return None  # hali birorta qidiruv bo'lmagan
+    except Exception as e:
+        return f"Time slot qidiruvchi holatini o'qib bo'lmadi: {e}"
+    if not hb or now - hb > SLOT_MAX_AGE:
+        return f"Time slot qidiruvchi (/slot) {int((now - (hb or 0)) // 60)} daqiqadan beri ishlamayapti (oxirgi: {_fmt(hb)})."
+    return None
+
+
 def _update(state, key, problem, now, network=False):
     entry = state.setdefault(key, {"status": "ok", "fails": 0})
 
@@ -123,6 +140,7 @@ def main():
     review_problem, review_network = check_review(state, now)
     _update(state, "review-agent", review_problem, now, network=review_network)
     _update(state, "ERP", check_erp(), now, network=True)
+    _update(state, "time slot qidiruvchi", check_slot_hunter(now), now)
 
     _save_state(state)
 

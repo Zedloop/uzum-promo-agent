@@ -35,6 +35,7 @@ MAX_BACKOFF_SECONDS = 300
 DATE_DAYS = 21           # sana tanlashda bugundan necha kun ko'rsatiladi
 HEARTBEAT_STALE = 60     # qidiruvchi shuncha soniya ovoz bermasa - ogohlantiramiz
 MAX_SET_FAILS = 10       # band qilish shuncha marta rad etilsa - qidiruv to'xtatiladi
+ALERT_AFTER_ERRORS = 6   # Uzum ketma-ket shuncha marta xato bersa - guruhga yoziladi
 WEEKDAYS = ["Dush", "Sesh", "Chor", "Pay", "Jum", "Shan", "Yak"]
 MONTHS = ["yan", "fev", "mar", "apr", "may", "iyun", "iyul", "avg", "sen", "okt", "noy", "dek"]
 
@@ -351,6 +352,7 @@ def _check_item(hunt, it):
 
 def run_forever():
     backoff = POLL_SECONDS
+    error_streak, alerted = 0, False
     print(f"Time slot qidiruvchi ishga tushdi (har {POLL_SECONDS:g} s)", flush=True)
     while True:
         with _state() as st:
@@ -419,8 +421,16 @@ def run_forever():
             status = getattr(getattr(error, "response", None), "status_code", None)
             backoff = min(MAX_BACKOFF_SECONDS, max(backoff * 2, 30 if status == 429 else POLL_SECONDS * 2))
             print(f"Xato ({status}): {error} - {backoff:g} s kutamiz", flush=True)
+            error_streak += 1
+            # Bir martalik uzilish uchun emas - ketma-ket ko'p xatoda bir marta yozamiz
+            if error_streak == ALERT_AFTER_ERRORS:
+                _send(f"⚠️ Time slot qidiruvi: Uzum {error_streak} marta ketma-ket xato qaytardi, "
+                      f"tekshiruv sekinlashtirildi (har {backoff:g} s).\nXato: {str(error)[:300]}")
+                alerted = True
         else:
-            backoff = POLL_SECONDS
+            if alerted:
+                _send("✅ Time slot qidiruvi: Uzum yana javob beryapti, tekshiruv odatdagidek davom etmoqda.")
+            backoff, error_streak, alerted = POLL_SECONDS, 0, False
         time.sleep(backoff)
 
 
