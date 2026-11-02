@@ -39,6 +39,8 @@ class Config:
 
     TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
     TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+    # Guruhdagi "hisobotlar" mavzusi (topic) - aksiya va haftalik tekshiruv hisobotlari shu yerga
+    TELEGRAM_REPORTS_THREAD_ID = os.getenv("TELEGRAM_REPORTS_THREAD_ID")
 
     # /run-check manzilini tashqaridan (cron-job.org) chaqirish uchun maxfiy token
     RUN_TOKEN = os.getenv("RUN_TOKEN")

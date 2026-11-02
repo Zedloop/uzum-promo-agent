@@ -12,7 +12,7 @@ import requests
 from config import Config
 from erp_client import get_prices_by_sku
 from promo_client import PromoClient
-from telegram_notify import send_text
+from telegram_notify import send_report
 
 LOGISTICS_DAYS = 90
 
@@ -96,7 +96,7 @@ def run():
     resp = requests.post(url, params={"token": Config.ERP_API_TOKEN}, json=updates, timeout=60)
     resp.raise_for_status()
     print(f"ERP yangilandi: {resp.json()}")
-    send_text(
+    send_report(
         "🔄 Uzum komissiya/boost/logistikasi o'zgargan - ERP yangilandi:\n"
         + "\n".join(lines)
         + "\n\nERP'dagi foyda va bot marjasi endi shu qiymatlar bilan hisoblanadi."
@@ -107,5 +107,5 @@ if __name__ == "__main__":
     try:
         run()
     except Exception as e:
-        send_text(f"❌ Haftalik komissiya/logistika tekshiruvida xato: {e}")
+        send_report(f"❌ Haftalik komissiya/logistika tekshiruvida xato: {e}")
         raise

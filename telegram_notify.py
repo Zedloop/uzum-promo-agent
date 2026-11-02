@@ -12,7 +12,13 @@ def _api_base():
     return API_BASE_TMPL.format(token=Config.TELEGRAM_BOT_TOKEN)
 
 
-def send_text(text):
+def send_report(text):
+    """Hisobotlar guruhning "hisobotlar" mavzusiga (thread) yuboriladi -
+    mavzu sozlanmagan bo'lsa, oddiy guruhga."""
+    send_text(text, thread_id=Config.TELEGRAM_REPORTS_THREAD_ID)
+
+
+def send_text(text, thread_id=None):
     if not Config.TELEGRAM_BOT_TOKEN or not Config.TELEGRAM_CHAT_ID:
         return
     # Telegram bitta xabarda 4096 belgidan ko'pini qabul qilmaydi - uzun
@@ -26,11 +32,11 @@ def send_text(text):
             current = f"{current}\n{line}" if current else line
     chunks.append(current)
     for chunk in chunks:
+        payload = {"chat_id": Config.TELEGRAM_CHAT_ID, "text": chunk[:4096]}
+        if thread_id:
+            payload["message_thread_id"] = int(thread_id)
         try:
-            requests.post(
-                f"{_api_base()}/sendMessage",
-                json={"chat_id": Config.TELEGRAM_CHAT_ID, "text": chunk[:4096]}, timeout=30,
-            )
+            requests.post(f"{_api_base()}/sendMessage", json=payload, timeout=30)
         except Exception:
             pass
 
@@ -216,7 +222,7 @@ def send_summary(added, nastroyka_only, bogsiz_unlinked=None):
         for shop_id, sku_code in bogsiz_unlinked:
             lines.append(f"- {sku_code} (do'kon {shop_id})")
 
-    send_text("\n".join(lines))
+    send_report("\n".join(lines))
 
 
 # Eslatma: tugma bosilishini qayta ishlash endi bot_listener.py'da - u doimiy
