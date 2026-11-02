@@ -1,4 +1,5 @@
 import base64
+import time
 
 import requests
 
@@ -158,6 +159,31 @@ class PromoClient:
             if len(items) < size:
                 return result
             page += 1
+
+    def get_free_timeslots(self, invoice_id, pool_source):
+        """Nakladnoy uchun omborda hozir bo'sh time slotlar:
+        [{"timeFrom": ms, "timeTo": ms}, ...]. Sotuvchi kabineti ham shu
+        so'rovni yuboradi (timeFrom - hozirdan 1 soat keyin)."""
+        url = f"{self.product_base_url}/shop/{self.shop_id}/v2/invoice/time-slot/get"
+        body = {
+            "invoiceIds": [invoice_id],
+            "poolSource": pool_source,
+            "timeFrom": int(time.time() * 1000) + 3600_000,
+        }
+        payload = self._request("POST", url, json=body, timeout=30).json().get("payload") or {}
+        return payload.get("timeSlots") or []
+
+    def set_timeslot(self, invoice_id, time_from, stock_id, pool_source):
+        """Nakladnoyga time slot band qilish. Uzum har bir nakladnoyda slotni
+        o'zgartirish sonini cheklaydi (remainingAmountOfUpdates)."""
+        url = f"{self.product_base_url}/shop/{self.shop_id}/v2/invoice/time-slot/set"
+        body = {
+            "timeFrom": time_from,
+            "invoiceIds": [invoice_id],
+            "stockId": stock_id,
+            "poolSource": pool_source,
+        }
+        return self._request("POST", url, json=body, timeout=30).json()
 
     def get_invoice_pdf(self, invoice_id):
         """Ta'minlash aktining PDF fayli (bytes). Uzum uni JSON ichida base64

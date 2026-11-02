@@ -13,6 +13,7 @@ from promocode_create import parse_percent
 from returns_report import build_returns_reports
 from telegram_notify import send_text, send_with_buttons
 from timeslot_report import build_timeslot_report
+import timeslot_hunter
 
 app = Flask(__name__)
 
@@ -99,6 +100,14 @@ def telegram_webhook():
             threading.Thread(target=_send_timeslot, daemon=True).start()
         elif name == "/akt":
             threading.Thread(target=_send_acts, daemon=True).start()
+        elif name == "/slot":
+            # Haqiqiy slotni band qiladi (o'zgartirish soni cheklangan) - faqat
+            # ruxsat berilgan foydalanuvchi(lar)
+            user_id = str((msg.get("from") or {}).get("id", ""))
+            if Config.ALLOWED_USER_IDS and user_id not in Config.ALLOWED_USER_IDS:
+                send_text("⛔ Time slot qidirishga ruxsatingiz yo'q.")
+            else:
+                threading.Thread(target=timeslot_hunter.start_picker, daemon=True).start()
         elif name == "/promocode":
             # Haqiqiy chegirma yaratadi - shuning uchun faqat ruxsat
             # berilgan foydalanuvchi(lar), tugmalar kabi
