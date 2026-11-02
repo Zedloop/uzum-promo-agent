@@ -19,13 +19,14 @@ def get_prices_by_sku():
     return response.json()
 
 
-def hisobla_marja(narx, tannarx, logistika, boshqa_harajat, komissiya_foiz=None):
+def hisobla_marja(narx, tannarx, logistika, boshqa_harajat, komissiya_foiz=None, boost_foiz=0):
     """ERP sahifasidagi bilan bir xil formula: komissiya+soliq+logistika+boshqa
     xarajatlarni ayirib, sof foyda foizini hisoblaydi. komissiya_foiz - ERP'da
-    shu mahsulotga kiritilgan foiz (masalan 25)."""
+    shu mahsulotga kiritilgan foiz (masalan 25), boost_foiz - "Буст заказов"
+    reklamasi foizi (Uzum komissiyasiga qo'shimcha)."""
     if komissiya_foiz is None:
         komissiya_foiz = STANDART_KOMISSIYA_FOIZ
-    komissiya = narx * komissiya_foiz / 100
+    komissiya = narx * (komissiya_foiz + (boost_foiz or 0)) / 100
     soliq = narx * SOLIQ_FOIZ
     jami = komissiya + (logistika or 0) + soliq + (boshqa_harajat or 0)
     tushum = narx - jami

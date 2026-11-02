@@ -82,6 +82,7 @@ def process_shop(shop_id, prices_by_sku, added, nastroyka_only, bogsiz_unlinked)
                         "logistika": price_info["logistika"],
                         "boshqa_harajat": price_info["boshqa_harajat"],
                         "komissiya_foiz": price_info.get("komissiya_foiz"),
+                        "boost_foiz": price_info.get("boost_foiz") or 0,
                     }
                 )
 
@@ -130,7 +131,7 @@ def process_shop(shop_id, prices_by_sku, added, nastroyka_only, bogsiz_unlinked)
                 for m in matched:
                     _, m["marja_foiz"] = hisobla_marja(
                         m["recommended_price"], m["tannarx"], m["logistika"], m["boshqa_harajat"],
-                        m.get("komissiya_foiz"),
+                        m.get("komissiya_foiz"), m.get("boost_foiz", 0),
                     )
                 matched_ids = {m["sku_id"] for m in matched}
                 others = [
