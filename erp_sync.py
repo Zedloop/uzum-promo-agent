@@ -1,7 +1,7 @@
-"""Haftalik tekshiruv: ERP'dagi komissiya, "Буст заказов" va logistikani Uzum
+"""Kunlik tekshiruv: ERP'dagi komissiya, "Буст заказов" va logistikani Uzum
 haqiqatda olayotgan qiymatlarga tenglashtiradi va o'zgarishlarni Telegram'ga yozadi.
 
-Hetzner'da systemd timer orqali har dushanba ertalab ishga tushadi:
+Hetzner'da systemd timer orqali har kuni 09:00 (Toshkent) da ishga tushadi:
     venv/bin/python erp_sync.py
 """
 import time
@@ -107,5 +107,5 @@ if __name__ == "__main__":
     try:
         run()
     except Exception as e:
-        send_report(f"❌ Haftalik komissiya/logistika tekshiruvida xato: {e}")
+        send_report(f"❌ Kunlik komissiya/logistika tekshiruvida xato: {e}")
         raise
