@@ -30,7 +30,13 @@ DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 STATE_FILE = os.path.join(DATA_DIR, "slot_hunts.json")
 LOCK_FILE = STATE_FILE + ".lock"
 
-POLL_SECONDS = float(os.getenv("SLOT_POLL_SECONDS", "5"))
+POLL_SECONDS = float(os.getenv("SLOT_POLL_SECONDS", "2"))
+# Uzum xato qaytarsa (ko'p so'rov va h.k.) - shu oraliqqa o'tamiz, SLOW_MODE_HOURS
+# dan keyin yana POLL_SECONDS ni sinab ko'ramiz
+SLOW_POLL_SECONDS = float(os.getenv("SLOT_SLOW_POLL_SECONDS", "3"))
+SLOW_MODE_HOURS = 24
+SLOW_AFTER_ERRORS = 3    # ketma-ket shuncha xatodan (yoki bitta 429 dan) keyin sekin rejim
+SYNC_SECONDS = 30        # nakladnoylarning Uzum'dagi joriy sloti shuncha soniyada qayta o'qiladi
 MAX_BACKOFF_SECONDS = 300
 DATE_DAYS = 21           # sana tanlashda bugundan necha kun ko'rsatiladi
 HEARTBEAT_STALE = 60     # qidiruvchi shuncha soniya ovoz bermasa - ogohlantiramiz
@@ -227,8 +233,12 @@ def _hunt_text(hunt):
                                        "stopped": " to'xtatildi", "expired": " tugadi (kunlar o'tib ketdi)",
                                        "failed": " to'xtadi ❌ (Uzum band qilishni qayta-qayta rad etdi)"}[hunt["status"]], ""]
     for it in hunt["items"]:
-        if it.get("booked"):
+        if it.get("booked") and it.get("external"):
+            holat = f"✅ slot boshqa joyda qo'yilgan: {_fmt(it['booked'], '%d.%m.%Y %H:%M')}"
+        elif it.get("booked"):
             holat = f"✅ band qilindi: {_fmt(it['booked'], '%d.%m.%Y %H:%M')}"
+        elif it.get("gone"):
+            holat = "⚠️ endi o'zgartirib bo'lmaydi (bekor qilingan yoki o'zgartirish limiti tugagan)"
         elif hunt["status"] == "active":
             holat = "⏳ qidirilmoqda"
         else:
@@ -237,7 +247,8 @@ def _hunt_text(hunt):
     lines.append("")
     lines.append("📅 Kunlar: " + ", ".join(_day_label(d) for d in hunt["dates"]))
     if hunt["status"] == "active":
-        lines.append(f"🔁 Har {POLL_SECONDS:g} soniyada tekshiriladi (tekshiruvlar: {hunt.get('checks', 0)})")
+        lines.append(f"🔁 Har {POLL_SECONDS:g} soniyada tekshiriladi (Uzum xato bersa {SLOW_POLL_SECONDS:g} s), "
+                     f"tekshiruvlar: {hunt.get('checks', 0)}")
     if hunt.get("last_error") and hunt["status"] in ("active", "failed"):
         lines.append(f"⚠️ Oxirgi xato: {hunt['last_error'][:200]}")
     return "\n".join(lines)
@@ -324,10 +335,44 @@ def handle_callback(callback, who):
 
 # ---------- qidiruvchi (alohida jarayon) ----------
 
+_clients = {}
+
+
+def _client(shop_id):
+    # Har tekshiruvda yangi ulanish ochmaymiz - bir xil sessiya (keep-alive)
+    # so'rovni bir necha yuz ms tezlashtiradi, poygada bu muhim
+    if shop_id not in _clients:
+        _clients[shop_id] = PromoClient(shop_id)
+    return _clients[shop_id]
+
+
+def _sync_with_uzum(hunt):
+    """Nakladnoylarning Uzum'dagi joriy holatini qayta o'qiydi. Slot boshqa
+    joyda (qo'lda yoki boshqa bot orqali) tanlangan kunlardan biriga qo'yilgan
+    bo'lsa - o'sha nakladnoy uchun qidiruv tugaydi: yaxshi slotni qayta
+    ko'chirib, cheklangan o'zgartirish sonini sarflamaymiz."""
+    by_shop = {}
+    for it in hunt["items"]:
+        if not it.get("booked") and not it.get("gone"):
+            by_shop.setdefault(it["shop"], []).append(it)
+    external = []
+    for shop, items in by_shop.items():
+        invoices = {inv["id"]: inv for inv in _client(shop).list_invoices()}
+        for it in items:
+            inv = invoices.get(it["id"]) or {}
+            res = inv.get("timeSlotReservation") or {}
+            if (inv.get("invoiceStatus") or {}).get("value") != "CREATED" or (inv.get("remainingAmountOfUpdates") or 0) <= 0:
+                it["gone"] = True
+            elif res.get("timeFrom") and _day(res["timeFrom"]) in hunt["dates"]:
+                it["booked"], it["booked_to"], it["external"] = res["timeFrom"], res.get("timeTo"), True
+                external.append(it)
+    return external
+
+
 def _check_item(hunt, it):
     """Bitta nakladnoy uchun bo'sh slotlarni tekshiradi va mos kelsa band
     qiladi. True - band qilindi."""
-    client = PromoClient(it["shop"])
+    client = _client(it["shop"])
     slots = client.get_free_timeslots(it["id"], it["pool"])
     wanted = set(hunt["dates"])
     candidates = sorted((s for s in slots if _day(s["timeFrom"]) in wanted), key=lambda s: s["timeFrom"])
@@ -350,54 +395,72 @@ def _check_item(hunt, it):
     return False
 
 
+def _run_checks(active):
+    """Barcha faol qidiruvlardagi nakladnoylarni parallel tekshiradi.
+    Qaytaradi: oxirgi xato (yo'q bo'lsa None)."""
+    jobs = [(hunt, it) for hunt in active.values() for it in hunt["items"]
+            if not it.get("booked") and not it.get("gone")]
+    if not jobs:
+        return None
+    errors = []
+
+    def work(job):
+        hunt, it = job
+        try:
+            if _check_item(hunt, it):
+                hunt["_booked_now"].append(it)
+        except Exception as e:
+            if not isinstance(e, requests.HTTPError):
+                traceback.print_exc()
+            hunt["last_error"] = str(e)
+            errors.append(e)
+
+    with ThreadPoolExecutor(min(8, len(jobs))) as ex:
+        list(ex.map(work, jobs))
+    return errors[-1] if errors else None
+
+
 def run_forever():
-    backoff = POLL_SECONDS
-    error_streak, alerted = 0, False
-    print(f"Time slot qidiruvchi ishga tushdi (har {POLL_SECONDS:g} s)", flush=True)
+    interval, error_streak, alerted = POLL_SECONDS, 0, False
+    last_sync = {}
+    print(f"Time slot qidiruvchi ishga tushdi (har {POLL_SECONDS:g} s, muammoda {SLOW_POLL_SECONDS:g} s)", flush=True)
     while True:
+        started = time.time()
         with _state() as st:
-            st["heartbeat"] = time.time()
+            st["heartbeat"] = started
+            slow_until = st.get("slow_until", 0)
             active = {k: v for k, v in st["hunts"].items() if v["status"] == "active"}
+        base = SLOW_POLL_SECONDS if started < slow_until else POLL_SECONDS
         if not active:
-            time.sleep(POLL_SECONDS)
+            time.sleep(base)
             continue
 
         today = _today().isoformat()
-        results, error = {}, None
+        external = {}
         for hunt_id, hunt in active.items():
+            hunt["_booked_now"] = []
             hunt["dates"] = [d for d in hunt["dates"] if d >= today]
             if not hunt["dates"]:
                 hunt["status"] = "expired"
-                results[hunt_id] = hunt
                 continue
-            booked_now = []
-            for it in hunt["items"]:
-                if it.get("booked"):
-                    continue
+            if started - last_sync.get(hunt_id, 0) >= SYNC_SECONDS:
+                last_sync[hunt_id] = started
                 try:
-                    if _check_item(hunt, it):
-                        booked_now.append(it)
-                except requests.HTTPError as e:
-                    error = e
-                    hunt["last_error"] = str(e)
+                    external[hunt_id] = _sync_with_uzum(hunt)
                 except Exception as e:
-                    traceback.print_exc()
-                    error = e
-                    hunt["last_error"] = str(e)
-                if hunt["status"] == "failed":
-                    break
+                    hunt["last_error"] = f"holatni o'qib bo'lmadi: {e}"
+
+        error = _run_checks({k: h for k, h in active.items() if h["status"] == "active"})
+
+        for hunt in active.values():
             hunt["checks"] = hunt.get("checks", 0) + 1
-            if hunt["status"] == "failed":
-                pass
-            elif all(it.get("booked") for it in hunt["items"]):
+            if hunt["status"] == "active" and all(it.get("booked") or it.get("gone") for it in hunt["items"]):
                 hunt["status"] = "done"
-            hunt["_booked_now"] = booked_now
-            results[hunt_id] = hunt
 
         # Natijani saqlaymiz - shu orada foydalanuvchi "To'xtatish" ni bosgan
         # bo'lsa, uning qarori ustun (statusni qayta "active" qilmaymiz)
         with _state() as st:
-            for hunt_id, hunt in results.items():
+            for hunt_id, hunt in active.items():
                 saved = st["hunts"].get(hunt_id)
                 if not saved:
                     continue
@@ -409,29 +472,40 @@ def run_forever():
                     _send(f"✅ Time slot band qilindi!\n\n🏪 {it['shop_title']}\n📄 Nakladnoy {it['number']} "
                           f"({it['qty']} dona)\n🕒 {_fmt(it['booked'], '%d.%m.%Y %H:%M')}"
                           + (f"–{_fmt(it['booked_to'], '%H:%M')}" if it.get("booked_to") else ""))
+                for it in external.get(hunt_id, []):
+                    _send(f"ℹ️ Nakladnoy {it['number']} ({it['shop_title']}) sloti boshqa joyda tanlangan kunga "
+                          f"qo'yilgan: {_fmt(it['booked'], '%d.%m.%Y %H:%M')}.\nBu nakladnoy uchun qidiruv to'xtatildi - "
+                          "slotni qayta ko'chirib, o'zgartirish sonini sarflamaymiz.")
                 if hunt["status"] == "failed" and saved["status"] == "active":
                     _send(f"❌ Time slot qidiruvi to'xtadi: Uzum band qilishni qayta-qayta rad etdi.\n"
                           f"Oxirgi javob: {hunt.get('last_error', '')[:300]}")
-                if booked_now or hunt["status"] != "active" or hunt["checks"] % 60 == 1:
+                if booked_now or external.get(hunt_id) or hunt["status"] != "active" or hunt["checks"] % 150 == 1:
                     _edit(hunt["msg_id"], _hunt_text(hunt), _hunt_keyboard(hunt_id, hunt))
 
-        # Uzum xato qaytarsa (ko'p so'rov, server xatosi) - akkauntni xavf
-        # ostiga qo'ymaslik uchun sekinlashamiz
-        if error is not None:
-            status = getattr(getattr(error, "response", None), "status_code", None)
-            backoff = min(MAX_BACKOFF_SECONDS, max(backoff * 2, 30 if status == 429 else POLL_SECONDS * 2))
-            print(f"Xato ({status}): {error} - {backoff:g} s kutamiz", flush=True)
-            error_streak += 1
-            # Bir martalik uzilish uchun emas - ketma-ket ko'p xatoda bir marta yozamiz
-            if error_streak == ALERT_AFTER_ERRORS:
-                _send(f"⚠️ Time slot qidiruvi: Uzum {error_streak} marta ketma-ket xato qaytardi, "
-                      f"tekshiruv sekinlashtirildi (har {backoff:g} s).\nXato: {str(error)[:300]}")
-                alerted = True
-        else:
-            if alerted:
-                _send("✅ Time slot qidiruvi: Uzum yana javob beryapti, tekshiruv odatdagidek davom etmoqda.")
-            backoff, error_streak, alerted = POLL_SECONDS, 0, False
-        time.sleep(backoff)
+            # Uzum xato qaytarsa (ko'p so'rov, server xatosi) - akkauntni xavf
+            # ostiga qo'ymaslik uchun avval 3 s rejimiga o'tamiz, xato davom
+            # etsa yanada sekinlashamiz
+            if error is not None:
+                status = getattr(getattr(error, "response", None), "status_code", None)
+                error_streak += 1
+                if (status == 429 or error_streak >= SLOW_AFTER_ERRORS) and started >= st.get("slow_until", 0):
+                    st["slow_until"] = started + SLOW_MODE_HOURS * 3600
+                    _send(f"⚠️ Time slot qidiruvi: Uzum xato qaytardi - tekshiruv {POLL_SECONDS:g} s dan "
+                          f"{SLOW_POLL_SECONDS:g} s ga o'tkazildi ({SLOW_MODE_HOURS} soatga).\nXato: {str(error)[:300]}")
+                interval = min(MAX_BACKOFF_SECONDS, max(interval * 2, 30 if status == 429 else SLOW_POLL_SECONDS))
+                print(f"Xato ({status}): {error} - {interval:g} s kutamiz", flush=True)
+                if error_streak == ALERT_AFTER_ERRORS:
+                    _send(f"⚠️ Time slot qidiruvi: Uzum {error_streak} marta ketma-ket xato qaytardi, "
+                          f"tekshiruv sekinlashtirildi (har {interval:g} s).\nXato: {str(error)[:300]}")
+                    alerted = True
+            else:
+                if alerted:
+                    _send("✅ Time slot qidiruvi: Uzum yana javob beryapti, tekshiruv odatdagidek davom etmoqda.")
+                interval = SLOW_POLL_SECONDS if started < st.get("slow_until", 0) else POLL_SECONDS
+                error_streak, alerted = 0, False
+
+        # Oraliq - tekshiruv boshidan hisoblanadi (so'rov vaqti qo'shilib ketmasin)
+        time.sleep(max(0.2, interval - (time.time() - started)))
 
 
 if __name__ == "__main__":
