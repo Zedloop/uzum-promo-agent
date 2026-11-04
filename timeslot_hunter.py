@@ -257,7 +257,8 @@ def _hunt_text(hunt):
             lines.append(f"   • {_fmt(s['slot'], '%d.%m %H:%M')} ({s['number'][-4:]}) - {_fmt(s['first'] * 1000, '%d.%m %H:%M:%S')} da, "
                          f"{s['times']} marta: {s['result'] or '?'}")
     elif hunt["status"] != "active":
-        lines.append("👀 Tanlangan kunlarda bo'sh slot bir marta ham ko'rinmadi - poygada yutqazmadik, slot umuman chiqmadi.")
+        lines.append(f"👀 Tekshiruvlarimizda tanlangan kunlarda bo'sh slot ko'rinmadi. Bo'shab, {POLL_SECONDS:g} soniyadan "
+                     "tez boshqa bot olib ketgan slotlarni ko'ra olmaymiz - ular bo'lgan bo'lishi mumkin.")
     if hunt.get("last_error") and hunt["status"] in ("active", "failed"):
         lines.append(f"⚠️ Oxirgi xato: {hunt['last_error'][:200]}")
     return "\n".join(lines)
