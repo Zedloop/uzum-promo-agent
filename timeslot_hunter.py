@@ -245,10 +245,19 @@ def _hunt_text(hunt):
             holat = "❌ topilmadi"
         lines.append(f"• {it['shop_title']} · {it['number']} · {it['qty']} dona — {holat}")
     lines.append("")
-    lines.append("📅 Kunlar: " + ", ".join(_day_label(d) for d in hunt["dates"]))
+    # O'tgan kunlar qidiruvdan chiqarib boriladi - xabarda asl tanlovni ko'rsatamiz
+    lines.append("📅 Kunlar: " + ", ".join(_day_label(d) for d in hunt.get("dates_all") or hunt["dates"]))
     if hunt["status"] == "active":
         lines.append(f"🔁 Har {POLL_SECONDS:g} soniyada tekshiriladi (Uzum xato bersa {SLOW_POLL_SECONDS:g} s), "
                      f"tekshiruvlar: {hunt.get('checks', 0)}")
+    seen = sorted((hunt.get("seen") or {}).values(), key=lambda s: s["first"])
+    if seen:
+        lines.append(f"👀 Tanlangan kunlarda {len(seen)} ta bo'sh slot ko'rindi:")
+        for s in seen[-5:]:
+            lines.append(f"   • {_fmt(s['slot'], '%d.%m %H:%M')} ({s['number'][-4:]}) - {_fmt(s['first'] * 1000, '%d.%m %H:%M:%S')} da, "
+                         f"{s['times']} marta: {s['result'] or '?'}")
+    elif hunt["status"] != "active":
+        lines.append("👀 Tanlangan kunlarda bo'sh slot bir marta ham ko'rinmadi - poygada yutqazmadik, slot umuman chiqmadi.")
     if hunt.get("last_error") and hunt["status"] in ("active", "failed"):
         lines.append(f"⚠️ Oxirgi xato: {hunt['last_error'][:200]}")
     return "\n".join(lines)
@@ -268,7 +277,7 @@ def _start_hunt(msg_id, draft):
         # band qilib o'zgartirish sonini behuda sarflamaymiz
         if it.get("cur_from") and _day(it["cur_from"]) in dates:
             it["booked"] = it["cur_from"]
-    hunt = {"msg_id": msg_id, "items": chosen, "dates": dates, "status": "active",
+    hunt = {"msg_id": msg_id, "items": chosen, "dates": dates, "dates_all": list(dates), "status": "active",
             "created": time.time(), "checks": 0}
     if all(it.get("booked") for it in chosen):
         hunt["status"] = "done"
@@ -377,6 +386,7 @@ def _check_item(hunt, it):
     wanted = set(hunt["dates"])
     candidates = sorted((s for s in slots if _day(s["timeFrom"]) in wanted), key=lambda s: s["timeFrom"])
     for slot in candidates[:3]:
+        seen = _note_seen(hunt, it, slot)
         try:
             client.set_timeslot(it["id"], slot["timeFrom"], it["stock_id"], it["pool"])
         except requests.HTTPError as e:
@@ -384,15 +394,32 @@ def _check_item(hunt, it):
             # Lekin ketma-ket ko'p marta rad etilsa - so'rovning o'zida muammo,
             # Uzum'ga so'rov yog'dirmaslik uchun qidiruvni to'xtatamiz.
             hunt["last_error"] = f"{it['number']} {_fmt(slot['timeFrom'])}: {e}"
+            seen["result"] = f"olishga ulgurmadik: {str(e)[:120]}"
+            print(f"SLOT KO'RINDI, olinmadi: {it['number']} {_fmt(slot['timeFrom'])} - {e}", flush=True)
             it["set_fail"] = it.get("set_fail", 0) + 1
             if it["set_fail"] >= MAX_SET_FAILS:
                 hunt["status"] = "failed"
                 return False
             continue
+        seen["result"] = "olindi ✅"
+        print(f"SLOT KO'RINDI va olindi: {it['number']} {_fmt(slot['timeFrom'])}", flush=True)
         it["booked"] = slot["timeFrom"]
         it["booked_to"] = slot.get("timeTo")
         return True
     return False
+
+
+def _note_seen(hunt, it, slot):
+    """Tanlangan kunda ko'ringan har bir bo'sh slotni yozib boramiz - qidiruv
+    natija bermasa, "slot umuman chiqmadimi yoki boshqa bot oldin oldimi"
+    degan savolga javob shu yerdan olinadi."""
+    key = f"{it['number']}:{slot['timeFrom']}"
+    now = time.time()
+    seen = hunt.setdefault("seen", {}).setdefault(key, {"number": it["number"], "slot": slot["timeFrom"],
+                                                         "first": now, "times": 0, "result": None})
+    seen["last"] = now
+    seen["times"] += 1
+    return seen
 
 
 def _run_checks(active):
