@@ -121,10 +121,23 @@ def _iso_ts(s):
     return dt.datetime.fromisoformat(s.replace("Z", "+00:00")).timestamp()
 
 
-def _analyze(payouts, before_path, after_path, erp):
+def _expenses(c, base, t0, t1):
+    """Uzum xizmatlari (logistika, ombor, marketing...) - (t0, t1] oralig'ida sof yechilgan summa."""
+    total, page = 0, 0
+    while True:
+        items = c.session.get(base + "/v1/seller/finance/expenses", timeout=60, params={
+            "shopIds": ",".join(Config.UZUM_SHOP_IDS), "dateFrom": int(t0), "dateTo": int(t1),
+            "page": page, "size": 100}).json().get("items") or []
+        total += sum(e["amount"] if e["type"] == "PAYMENT" else -e["amount"] for e in items)
+        if len(items) < 100:
+            return total
+        page += 1
+
+
+def _analyze(payouts, before_path, after_path, erp, expenses):
     before, after = _load(before_path), _load(after_path)
     amount = sum(p["amount"] for p in payouts)
-    sales = cost = other = 0
+    credited = sales = cost = other = 0
     count = units = 0
     missing = {}
     for key, o in after.items():
@@ -134,6 +147,7 @@ def _analyze(payouts, before_path, after_path, erp):
         q = max(0, (o["qty"] or 0) - (o["ret"] or 0))
         count += 1
         units += q
+        credited += diff
         sales += (o["price"] or 0) * q
         info = erp.get(o["sku"])
         if info and info.get("tannarx"):
@@ -159,6 +173,17 @@ def _analyze(payouts, before_path, after_path, erp):
     if other:
         lines.append(f"➖ Qadoq va boshqa: {_som(other)}")
     lines.append(f"✅ SOF FOYDA: {_som(profit)} so'm ({pct(profit)})")
+    # Tekshiruv: shu buyurtmalar uchun Uzum yozgan summa - oldingi to'lovdan beri
+    # yechilgan xarajatlar to'lov summasiga teng chiqsa, buyurtmalar ro'yxati to'g'ri
+    gap = amount - (credited - expenses)
+    rel = abs(gap) / amount * 100 if amount else 0
+    lines += ["", f"🔎 Tekshiruv: buyurtmalar uchun yozilgan {_som(credited)} − Uzum xarajatlari {_som(expenses)} "
+                  f"= {_som(credited - expenses)} | to'lov {_som(amount)}"]
+    if rel <= 2:
+        lines.append(f"✅ Mos keldi (farq {_som(gap)}, {rel:.1f}%) - hisob aniq.")
+    else:
+        lines.append(f"⚠️ Farq {_som(gap)} so'm ({rel:.1f}%) - to'lovga oldingi balans qoldig'i yoki tuzatishlar "
+                     "qo'shilgan bo'lishi mumkin, foyda taxminiy.")
     if missing:
         lines += ["", f"⚠️ {sum(missing.values()):.0f} dona tovarning tannarxi ERP'da yo'q (Uzum kabinetidagi tannarx "
                       "olindi yoki noma'lum - foyda shuncha oshib ko'rinishi mumkin):"]
@@ -199,9 +224,13 @@ def check_payouts():
             state["done"].append(p["id"])  # oldingi nusxa yo'q - aniq hisoblab bo'lmaydi
             continue
         groups.setdefault((before[-1][1], after[0][1]), []).append(p)
+    valid = sorted((_iso_ts(p["createdAt"]) for p in items if p["status"] != "REJECTED"))
     for (b, a), payouts in groups.items():
         erp = erp or get_prices_by_sku()
-        send_report(_analyze(payouts, b, a, erp))
+        first = min(_iso_ts(p["createdAt"]) for p in payouts)
+        last = max(_iso_ts(p["createdAt"]) for p in payouts)
+        prev = max((t for t in valid if t < first), default=first - 16 * 86400)
+        send_report(_analyze(payouts, b, a, erp, _expenses(c, base, prev, last)))
         state["done"] += [p["id"] for p in payouts]
     with open(STATE_FILE, "w", encoding="utf-8") as f:
         json.dump(state, f)
