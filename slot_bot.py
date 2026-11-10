@@ -21,17 +21,25 @@ API = f"https://api.telegram.org/bot{hunter.SLOT_BOT_TOKEN}"
 OFFSET_FILE = os.path.join(hunter.DATA_DIR, "slot_bot_offset.json")
 ALLOWED = {u.strip() for u in os.getenv("SLOT_ALLOWED_USER_IDS", "").split(",") if u.strip()} or Config.ALLOWED_USER_IDS
 
-COMMANDS = [
-    {"command": "slot", "description": "Bo'sh time slotni poylab band qilish"},
-    {"command": "holat", "description": "Faol qidiruvlar"},
-]
+COMMANDS = [{"command": "start", "description": "Tugmalarni ko'rsatish"}]
+
+BTN_NEW = "📦 Yangi qidiruv"
+BTN_STATUS = "📋 Holat"
+# Chat pastida doim turadigan tugmalar - buyruq yozish shart emas
+KEYBOARD = {"keyboard": [[{"text": BTN_NEW}, {"text": BTN_STATUS}]], "resize_keyboard": True, "is_persistent": True}
 
 WELCOME = (
     "👋 Time slot boti\n\n"
     "Uzum omboriga yetkazib berish uchun bo'sh time slotni poylab, topilishi bilan band qiladi.\n\n"
-    "/slot - yangi qidiruv: nakladnoy va kunlarni tanlaysiz\n"
-    "/holat - hozir ishlayotgan qidiruvlar"
+    f"{BTN_NEW} - nakladnoy va kunlarni tanlab, qidiruvni boshlash\n"
+    f"{BTN_STATUS} - hozir ishlayotgan qidiruvlar\n\n"
+    "Bo'sh slot ko'rinsa - olindimi yoki boshqa bot oldin oldimi, darhol shu yerga yozaman."
 )
+
+
+def _reply(chat, text):
+    """Pastki tugmalar bilan xabar."""
+    requests.post(f"{API}/sendMessage", json={"chat_id": chat, "text": text, "reply_markup": KEYBOARD}, timeout=30)
 
 
 def _allowed(user):
@@ -49,11 +57,13 @@ def _status_text(chat):
         hb = st.get("heartbeat", 0)
     lines = [f"🔁 Qidiruvchi: {'ishlayapti ✅' if time.time() - hb < hunter.HEARTBEAT_STALE else 'JAVOB BERMAYAPTI ⚠️'}"]
     if not active:
-        lines.append("Faol qidiruv yo'q. Yangisini /slot bilan boshlang.")
+        lines.append(f"Faol qidiruv yo'q. Yangisini «{BTN_NEW}» tugmasi bilan boshlang.")
     for _, h in active:
         items = ", ".join(f"{it['shop_title']} {it['number'][-6:]}" for it in h["items"] if not it.get("booked"))
+        seen = h.get("seen") or {}
         lines.append(f"\n• {items or 'hammasi band qilingan'}\n  kunlar: "
-                     + ", ".join(hunter._day_label(d) for d in h["dates"]) + f"\n  tekshiruvlar: {h.get('checks', 0)}")
+                     + ", ".join(hunter._day_label(d) for d in h["dates"]) + f"\n  tekshiruvlar: {h.get('checks', 0)}"
+                     + f"\n  ko'rilgan bo'sh slotlar: {len(seen)}")
     return "\n".join(lines)
 
 
@@ -61,17 +71,19 @@ def _handle(update):
     msg = update.get("message")
     if msg:
         chat, user = msg["chat"]["id"], msg.get("from")
-        cmd = (msg.get("text") or "").strip().split()[:1]
-        cmd = cmd[0].split("@")[0] if cmd else ""
+        text = (msg.get("text") or "").strip()
+        cmd = text.split()[0].split("@")[0] if text else ""
         if not _allowed(user):
             hunter._send("⛔ Bu bot hozircha yopiq.", chat=chat)
             return
         if cmd in ("/start", "/help"):
-            hunter._send(WELCOME, chat=chat)
-        elif cmd == "/slot":
+            _reply(chat, WELCOME)
+        elif text == BTN_NEW or cmd == "/slot":
             threading.Thread(target=hunter.start_picker, args=(chat,), daemon=True).start()
-        elif cmd == "/holat":
-            hunter._send(_status_text(chat), chat=chat)
+        elif text == BTN_STATUS or cmd == "/holat":
+            _reply(chat, _status_text(chat))
+        else:
+            _reply(chat, "Pastdagi tugmalardan foydalaning 👇")
         return
     cb = update.get("callback_query")
     if cb and (cb.get("data") or "").startswith("ts:"):

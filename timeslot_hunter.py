@@ -200,7 +200,7 @@ def start_picker(chat=None):
         return
     if not invoices:
         _edit(chat, msg_id, "📦 Slot qo'yish mumkin bo'lgan «Yaratilgan» nakladnoy yo'q.\n"
-                            "Avval Uzum'da nakladnoy yarating, keyin /slot ni qayta yozing.")
+                            "Avval Uzum'da nakladnoy yarating, keyin «📦 Yangi qidiruv» ni qayta bosing.")
         return
     draft = {"invoices": invoices, "sel": [], "dates": [], "created": time.time(), "chat": chat}
     with _state() as st:
@@ -266,7 +266,8 @@ def _hunt_text(hunt):
         lines.append(f"👀 Tanlangan kunlarda {len(seen)} ta bo'sh slot ko'rindi:")
         for s in seen[-5:]:
             lines.append(f"   • {_fmt(s['slot'], '%d.%m %H:%M')} ({s['number'][-4:]}) - {_fmt(s['first'] * 1000, '%d.%m %H:%M:%S')} da, "
-                         f"{s['times']} marta: {s['result'] or '?'}")
+                         f"{s['times']} marta: {s['result'] or '?'}"
+                         + (f" ({s['get_ms']}+{s['set_ms']} ms)" if s.get("set_ms") is not None else ""))
     elif hunt["status"] != "active":
         lines.append(f"👀 Tekshiruvlarimizda tanlangan kunlarda bo'sh slot ko'rinmadi. Bo'shab, {POLL_SECONDS:g} soniyadan "
                      "tez boshqa bot olib ketgan slotlarni ko'ra olmaymiz - ular bo'lgan bo'lishi mumkin.")
@@ -319,7 +320,7 @@ def handle_callback(callback, who):
     with _state() as st:
         draft = st["drafts"].get(key)
         if not draft:
-            _answer(callback["id"], "Bu xabar eskirgan - /slot ni qayta yozing.")
+            _answer(callback["id"], "Bu xabar eskirgan - «📦 Yangi qidiruv» tugmasini qayta bosing.")
             return
         screen, note = None, None
         if action == "i":
@@ -403,11 +404,18 @@ def _check_item(hunt, it):
     """Bitta nakladnoy uchun bo'sh slotlarni tekshiradi va mos kelsa band
     qiladi. True - band qilindi."""
     client = _client(it["shop"])
+    t0 = time.time()
     slots = client.get_free_timeslots(it["id"], it["pool"])
+    t1 = time.time()
+    # Slot shu oraliqda bo'shagan: oldingi tekshiruvdan beri o'tgan vaqt
+    gap = t1 - (it.get("last_check") or t1)
+    it["last_check"] = t1
     wanted = set(hunt["dates"])
     candidates = sorted((s for s in slots if _day(s["timeFrom"]) in wanted), key=lambda s: s["timeFrom"])
     for slot in candidates[:3]:
         seen = _note_seen(hunt, it, slot)
+        first = seen["times"] == 1
+        s0 = time.time()
         try:
             client.set_timeslot(it["id"], slot["timeFrom"], it["stock_id"], it["pool"])
         except requests.HTTPError as e:
@@ -416,18 +424,31 @@ def _check_item(hunt, it):
             # Uzum'ga so'rov yog'dirmaslik uchun qidiruvni to'xtatamiz.
             hunt["last_error"] = f"{it['number']} {_fmt(slot['timeFrom'])}: {e}"
             seen["result"] = f"olishga ulgurmadik: {str(e)[:120]}"
+            if first:
+                seen.update(get_ms=round((t1 - t0) * 1000), set_ms=round((time.time() - s0) * 1000), gap=round(gap, 1))
+                hunt["_notify"].append((it, seen))  # botga darhol xabar
             print(f"SLOT KO'RINDI, olinmadi: {it['number']} {_fmt(slot['timeFrom'])} - {e}", flush=True)
             it["set_fail"] = it.get("set_fail", 0) + 1
             if it["set_fail"] >= MAX_SET_FAILS:
                 hunt["status"] = "failed"
                 return False
             continue
-        seen["result"] = "olindi ✅"
+        seen.update(result="olindi ✅", get_ms=round((t1 - t0) * 1000), set_ms=round((time.time() - s0) * 1000),
+                    gap=round(gap, 1))
         print(f"SLOT KO'RINDI va olindi: {it['number']} {_fmt(slot['timeFrom'])}", flush=True)
         it["booked"] = slot["timeFrom"]
         it["booked_to"] = slot.get("timeTo")
+        it["timing"] = seen
         return True
     return False
+
+
+def _timing_text(s):
+    """Slot ko'ringan paytdagi o'lchovlar - poygada qayerda vaqt yo'qotilganini ko'rsatadi."""
+    if not s or s.get("set_ms") is None:
+        return ""
+    return (f"\n\n⏱ Slot oldingi tekshiruvdan keyin, ko'pi bilan {s['gap']:g} soniya ichida bo'shagan"
+            f"\n⏱ Ko'rish so'rovi: {s['get_ms']} ms, band qilish urinishi: {s['set_ms']} ms")
 
 
 def _note_seen(hunt, it, slot):
@@ -487,6 +508,7 @@ def run_forever():
         external = {}
         for hunt_id, hunt in active.items():
             hunt["_booked_now"] = []
+            hunt["_notify"] = []
             hunt["dates"] = [d for d in hunt["dates"] if d >= today]
             if not hunt["dates"]:
                 hunt["status"] = "expired"
@@ -513,13 +535,19 @@ def run_forever():
                 if not saved:
                     continue
                 booked_now = hunt.pop("_booked_now", [])
+                notify = hunt.pop("_notify", [])
                 if saved["status"] != "active":
                     hunt["status"] = saved["status"]
                 st["hunts"][hunt_id] = hunt
                 for it in booked_now:
                     _send(f"✅ Time slot band qilindi!\n\n🏪 {it['shop_title']}\n📄 Nakladnoy {it['number']} "
                           f"({it['qty']} dona)\n🕒 {_fmt(it['booked'], '%d.%m.%Y %H:%M')}"
-                          + (f"–{_fmt(it['booked_to'], '%H:%M')}" if it.get("booked_to") else ""), chat=hunt.get("chat"))
+                          + (f"–{_fmt(it['booked_to'], '%H:%M')}" if it.get("booked_to") else "")
+                          + _timing_text(it.get("timing")), chat=hunt.get("chat"))
+                for it, s in notify:
+                    _send(f"⚡ Bo'sh slot ko'rindi, lekin olishga ulgurmadik\n\n🏪 {it['shop_title']} · {it['number']}\n"
+                          f"🕒 Slot: {_fmt(s['slot'], '%d.%m.%Y %H:%M')}" + _timing_text(s)
+                          + f"\n\nUzum javobi: {s['result'].split(': ', 1)[-1]}", chat=hunt.get("chat"))
                 for it in external.get(hunt_id, []):
                     _send(f"ℹ️ Nakladnoy {it['number']} ({it['shop_title']}) sloti boshqa joyda tanlangan kunga "
                           f"qo'yilgan: {_fmt(it['booked'], '%d.%m.%Y %H:%M')}.\nBu nakladnoy uchun qidiruv to'xtatildi - "
