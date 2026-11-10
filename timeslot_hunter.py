@@ -1,9 +1,11 @@
 """/slot buyrug'i: tanlangan nakladnoylar uchun tanlangan kunlarda bo'sh
 time slot paydo bo'lishini kutib, topilishi bilan band qiladi.
 
-Telegram qismi (webapp.py / bot_listener.py chaqiradi):
-    start_picker()          - /slot: nakladnoylar ro'yxati tugmalar bilan
+Telegram qismi (alohida slot boti - slot_bot.py chaqiradi):
+    start_picker(chat)      - /slot: nakladnoylar ro'yxati tugmalar bilan
     handle_callback(...)    - "ts:..." tugmalari (nakladnoy/sana tanlash, boshlash, to'xtatish)
+Har bir qidiruv o'z chati va egasini eslab qoladi - keyinchalik bot boshqa
+sotuvchilar uchun ham ochilishi uchun.
 
 Qidiruvchi alohida systemd xizmati sifatida ishlaydi (gunicorn worker'lari
 bir nechta - har birida qidiruv takrorlanmasligi uchun):
@@ -23,7 +25,6 @@ import requests
 
 from config import Config
 from promo_client import PromoClient
-from telegram_notify import _answer_callback, _api_base
 
 TZ = dt.timezone(dt.timedelta(hours=5))  # Toshkent
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
@@ -86,23 +87,32 @@ def _today():
 
 # ---------- Telegram ----------
 
+# Alohida slot boti; sozlanmagan bo'lsa - promo bot guruhi (eski holat)
+SLOT_BOT_TOKEN = os.getenv("SLOT_BOT_TOKEN") or Config.TELEGRAM_BOT_TOKEN
+DEFAULT_CHAT = os.getenv("SLOT_CHAT_ID") or Config.TELEGRAM_CHAT_ID
+
+
 def _tg(method, payload):
-    r = requests.post(f"{_api_base()}/{method}", json=payload, timeout=30)
+    r = requests.post(f"https://api.telegram.org/bot{SLOT_BOT_TOKEN}/{method}", json=payload, timeout=30)
     return r.json().get("result") if r.ok else None
 
 
-def _send(text, keyboard=None):
-    payload = {"chat_id": Config.TELEGRAM_CHAT_ID, "text": text}
+def _send(text, keyboard=None, chat=None):
+    payload = {"chat_id": chat or DEFAULT_CHAT, "text": text}
     if keyboard is not None:
         payload["reply_markup"] = {"inline_keyboard": keyboard}
     msg = _tg("sendMessage", payload)
     return msg["message_id"] if msg else None
 
 
-def _edit(message_id, text, keyboard=None):
-    payload = {"chat_id": Config.TELEGRAM_CHAT_ID, "message_id": message_id, "text": text,
+def _edit(chat, message_id, text, keyboard=None):
+    payload = {"chat_id": chat or DEFAULT_CHAT, "message_id": message_id, "text": text,
                "reply_markup": {"inline_keyboard": keyboard or []}}
     _tg("editMessageText", payload)
+
+
+def _answer(callback_id, text=""):
+    _tg("answerCallbackQuery", {"callback_query_id": callback_id, "text": text})
 
 
 _titles_cache = {"at": 0, "titles": {}}
@@ -176,27 +186,28 @@ def _invoice_screen(draft):
     return text + "\n" + "\n".join(lines), keyboard
 
 
-def start_picker():
+def start_picker(chat=None):
     """/slot buyrug'i. Darhol "yuklanmoqda" deb javob beramiz, ro'yxat
     tayyor bo'lgach shu xabarni o'zgartiramiz."""
-    msg_id = _send("⏳ Nakladnoylar yuklanmoqda...")
+    chat = chat or DEFAULT_CHAT
+    msg_id = _send("⏳ Nakladnoylar yuklanmoqda...", chat=chat)
     if not msg_id:
         return
     try:
         invoices = _load_invoices()
     except Exception as e:
-        _edit(msg_id, f"❌ Nakladnoylarni olishda xato: {e}")
+        _edit(chat, msg_id, f"❌ Nakladnoylarni olishda xato: {e}")
         return
     if not invoices:
-        _edit(msg_id, "📦 Slot qo'yish mumkin bo'lgan «Yaratilgan» nakladnoy yo'q.\n"
-                      "Avval Uzum'da nakladnoy yarating, keyin /slot ni qayta yozing.")
+        _edit(chat, msg_id, "📦 Slot qo'yish mumkin bo'lgan «Yaratilgan» nakladnoy yo'q.\n"
+                            "Avval Uzum'da nakladnoy yarating, keyin /slot ni qayta yozing.")
         return
-    draft = {"invoices": invoices, "sel": [], "dates": [], "created": time.time()}
+    draft = {"invoices": invoices, "sel": [], "dates": [], "created": time.time(), "chat": chat}
     with _state() as st:
         # eski (1 kundan oshgan) qoralamalarni tozalaymiz
         st["drafts"] = {k: v for k, v in st["drafts"].items() if time.time() - v.get("created", 0) < 86400}
-        st["drafts"][str(msg_id)] = draft
-    _edit(msg_id, *_invoice_screen(draft))
+        st["drafts"][f"{chat}:{msg_id}"] = draft
+    _edit(chat, msg_id, *_invoice_screen(draft))
 
 
 # ---------- 2-qadam: sana tanlash ----------
@@ -278,8 +289,8 @@ def _start_hunt(msg_id, draft):
         # band qilib o'zgartirish sonini behuda sarflamaymiz
         if it.get("cur_from") and _day(it["cur_from"]) in dates:
             it["booked"] = it["cur_from"]
-    hunt = {"msg_id": msg_id, "items": chosen, "dates": dates, "dates_all": list(dates), "status": "active",
-            "created": time.time(), "checks": 0}
+    hunt = {"msg_id": msg_id, "chat": draft.get("chat") or DEFAULT_CHAT, "items": chosen, "dates": dates,
+            "dates_all": list(dates), "status": "active", "created": time.time(), "checks": 0}
     if all(it.get("booked") for it in chosen):
         hunt["status"] = "done"
     return uuid.uuid4().hex[:10], hunt
@@ -288,6 +299,8 @@ def _start_hunt(msg_id, draft):
 def handle_callback(callback, who):
     data = callback.get("data", "")
     msg_id = callback["message"]["message_id"]
+    chat = callback["message"]["chat"]["id"]
+    key = f"{chat}:{msg_id}"
     parts = data.split(":", 2)
     action = parts[1] if len(parts) > 1 else ""
     arg = parts[2] if len(parts) > 2 else ""
@@ -298,15 +311,15 @@ def handle_callback(callback, who):
             if hunt and hunt["status"] == "active":
                 hunt["status"] = "stopped"
                 hunt["stopped_by"] = who
-        _answer_callback(callback["id"], "⏹ To'xtatildi" if hunt else "Qidiruv topilmadi")
+        _answer(callback["id"], "⏹ To'xtatildi" if hunt else "Qidiruv topilmadi")
         if hunt:
-            _edit(hunt["msg_id"], _hunt_text(hunt) + f"\n\n({who})", [])
+            _edit(hunt.get("chat") or chat, hunt["msg_id"], _hunt_text(hunt) + f"\n\n({who})", [])
         return
 
     with _state() as st:
-        draft = st["drafts"].get(str(msg_id))
+        draft = st["drafts"].get(key)
         if not draft:
-            _answer_callback(callback["id"], "Bu xabar eskirgan - /slot ni qayta yozing.")
+            _answer(callback["id"], "Bu xabar eskirgan - /slot ni qayta yozing.")
             return
         screen, note = None, None
         if action == "i":
@@ -324,7 +337,7 @@ def handle_callback(callback, who):
             draft["dates"] = sorted(set(draft["dates"]) ^ {arg})
             screen = _date_screen(draft)
         elif action == "x":
-            del st["drafts"][str(msg_id)]
+            del st["drafts"][key]
             screen = ("📦 Time slot qidiruvi bekor qilindi.", [])
         elif action == "g":
             if not draft["dates"]:
@@ -332,15 +345,16 @@ def handle_callback(callback, who):
             else:
                 hunt_id, hunt = _start_hunt(msg_id, draft)
                 hunt["started_by"] = who
+                hunt["owner"] = (callback.get("from") or {}).get("id")
                 st["hunts"][hunt_id] = hunt
-                del st["drafts"][str(msg_id)]
+                del st["drafts"][key]
                 screen = (_hunt_text(hunt), _hunt_keyboard(hunt_id, hunt))
                 hb = st.get("heartbeat", 0)
                 if time.time() - hb > HEARTBEAT_STALE:
                     note = "⚠️ Qidiruvchi xizmati javob bermayapti!"
-    _answer_callback(callback["id"], note or "")
+    _answer(callback["id"], note or "")
     if screen:
-        _edit(msg_id, *screen)
+        _edit(chat, msg_id, *screen)
 
 
 # ---------- qidiruvchi (alohida jarayon) ----------
@@ -499,16 +513,16 @@ def run_forever():
                 for it in booked_now:
                     _send(f"✅ Time slot band qilindi!\n\n🏪 {it['shop_title']}\n📄 Nakladnoy {it['number']} "
                           f"({it['qty']} dona)\n🕒 {_fmt(it['booked'], '%d.%m.%Y %H:%M')}"
-                          + (f"–{_fmt(it['booked_to'], '%H:%M')}" if it.get("booked_to") else ""))
+                          + (f"–{_fmt(it['booked_to'], '%H:%M')}" if it.get("booked_to") else ""), chat=hunt.get("chat"))
                 for it in external.get(hunt_id, []):
                     _send(f"ℹ️ Nakladnoy {it['number']} ({it['shop_title']}) sloti boshqa joyda tanlangan kunga "
                           f"qo'yilgan: {_fmt(it['booked'], '%d.%m.%Y %H:%M')}.\nBu nakladnoy uchun qidiruv to'xtatildi - "
-                          "slotni qayta ko'chirib, o'zgartirish sonini sarflamaymiz.")
+                          "slotni qayta ko'chirib, o'zgartirish sonini sarflamaymiz.", chat=hunt.get("chat"))
                 if hunt["status"] == "failed" and saved["status"] == "active":
                     _send(f"❌ Time slot qidiruvi to'xtadi: Uzum band qilishni qayta-qayta rad etdi.\n"
-                          f"Oxirgi javob: {hunt.get('last_error', '')[:300]}")
+                          f"Oxirgi javob: {hunt.get('last_error', '')[:300]}", chat=hunt.get("chat"))
                 if booked_now or external.get(hunt_id) or hunt["status"] != "active" or hunt["checks"] % 150 == 1:
-                    _edit(hunt["msg_id"], _hunt_text(hunt), _hunt_keyboard(hunt_id, hunt))
+                    _edit(hunt.get("chat"), hunt["msg_id"], _hunt_text(hunt), _hunt_keyboard(hunt_id, hunt))
 
             # Uzum xato qaytarsa (ko'p so'rov, server xatosi) - akkauntni xavf
             # ostiga qo'ymaslik uchun avval 3 s rejimiga o'tamiz, xato davom

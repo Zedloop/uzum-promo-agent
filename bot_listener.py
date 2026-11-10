@@ -11,7 +11,6 @@ from telegram_notify import _answer_callback, _edit_message, _api_base
 from decision_store import mark_settled, pop_decision
 from promo_client import PromoClient, uzum_recommended_price
 from promocode_create import create_promocode, parse_percent
-import timeslot_hunter
 
 SKIP_MARKUP = 49990  # "Nastroykadan sozlash kerak" tugmasi: Narx = ERP narxi + shuncha, Chegirma = shuncha
 
@@ -39,12 +38,8 @@ def _handle_callback(callback):
     action, decision_id = data.split(":", 1)
 
     if action == "ts":
-        # /slot: nakladnoy/sana tanlash, qidiruvni boshlash va to'xtatish
-        try:
-            timeslot_hunter.handle_callback(callback, who)
-        except Exception:
-            traceback.print_exc()
-            _answer_callback(callback["id"], "❌ Xato yuz berdi")
+        # Guruhdagi eski /slot xabarlari - qidiruv endi alohida botda (slot_bot.py)
+        _answer_callback(callback["id"], "Time slot endi alohida botda: @bs_timebot")
         return
 
     if action == "promo":
