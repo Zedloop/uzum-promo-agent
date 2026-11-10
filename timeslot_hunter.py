@@ -340,8 +340,14 @@ def handle_callback(callback, who):
             del st["drafts"][key]
             screen = ("📦 Time slot qidiruvi bekor qilindi.", [])
         elif action == "g":
+            # Bitta nakladnoyni ikki qidiruv poylasa Uzum'ga so'rov ikki baravar
+            # ketadi (429 "Too Many Requests" xavfi) va ular bir-biriga xalaqit beradi
+            busy = {it["id"] for h in st["hunts"].values() if h["status"] == "active" for it in h["items"]}
+            dup = [draft["invoices"][i]["number"] for i in draft["sel"] if draft["invoices"][i]["id"] in busy]
             if not draft["dates"]:
                 note = "Avval kamida bitta kunni tanlang."
+            elif dup:
+                note = f"Bu nakladnoy allaqachon qidirilmoqda: {', '.join(dup)}. Avval o'sha qidiruvni to'xtating (/holat)."
             else:
                 hunt_id, hunt = _start_hunt(msg_id, draft)
                 hunt["started_by"] = who
